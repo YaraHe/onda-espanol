@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>句子讲解页 · Original A vs A — Refined</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&family=Noto+Serif+SC:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+button{font:inherit;color:inherit}
+:focus{outline:none}
+:focus-visible{outline-offset:2px}
+
+/* ---- 设备框几何（三套完全一致） ---- */
+.app{width:390px;height:844px;transform-origin:top left}
+.phone{
+  width:390px;height:844px;overflow:hidden;position:relative;
+  display:flex;flex-direction:column;
+}
+.topbar{flex:0 0 auto;position:relative;z-index:2}
+.content{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;scrollbar-width:none}
+.content::-webkit-scrollbar{display:none}
+.actionbar{flex:0 0 auto;position:relative;z-index:2}
+.sentence{margin:0}
+.ann-row dd,.g-val,.translation,.memory-list{margin:0}
+.ann-row{margin:0}
+.ann-list{margin:0;padding:0}
+.memory-list{padding:0;list-style:none}
+.missing{margin:0}
+
+/* ---- 状态机（三套共用同一套规则，不随视觉语言变化）
+       用 !important 抵御各方向对 display 的自有声明（如 grid / flex） ---- */
+.app[data-state="default"] .grammar-body,
+.app[data-state="degraded"] .grammar-body{display:none!important}
+.app[data-state="expanded"] .grammar-toggle .chev{transform:rotate(180deg)}
+.missing{display:none}
+.app[data-state="degraded"] .annotation,
+.app[data-state="degraded"] .memory-list{display:none!important}
+.app[data-state="degraded"] .missing{display:block!important}
+
+@media (prefers-reduced-motion:reduce){
+  .app *,.app *::before,.app *::after{animation:none!important;transition:none!important}
+}
+.app.no-motion *,.app.no-motion *::before,.app.no-motion *::after{animation:none!important}
+
+.app[data-dir="a"]{
+  --bg:#F6F2E8; --surface:#FCFAF4; --ink:#221E19; --ink-2:#544C42; --ink-3:#8C8375;
+  --rule:#DFD6C4; --primary:#2B4668; --accent:#A63A2E;
+  --font-mix:'Spectral','Noto Serif SC',Georgia,'Songti SC','SimSun',serif;
+  background:var(--bg); color:var(--ink); font-family:var(--font-mix);
+  -webkit-font-smoothing:antialiased;
+}
+.app[data-dir="a"] .phone{background:radial-gradient(125% 72% at 50% 0%,#FDFBF6 0%,#F6F2E8 58%,#EFE8D9 100%)}
+.app[data-dir="a"] .content{
+  padding:24px 22px 30px;
+  background-image:repeating-linear-gradient(0deg,rgba(140,131,117,.038) 0 1px,transparent 1px 29px);
+}
+.app[data-dir="a"] .topbar{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  padding:16px 18px 13px;border-bottom:1px solid var(--rule);
+}
+.app[data-dir="a"] .back,.app[data-dir="a"] .swap{
+  appearance:none;background:none;border:0;padding:6px 1px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:inherit;font-size:13.5px;letter-spacing:.04em;color:var(--ink-2);
+  transition:color .18s ease;
+}
+.app[data-dir="a"] .back{justify-self:start}
+.app[data-dir="a"] .swap{justify-self:end;color:var(--primary);border-bottom:1px solid rgba(43,70,104,.32)}
+.app[data-dir="a"] .back:hover{color:var(--ink)}
+.app[data-dir="a"] .back svg{width:13px;height:13px}
+.app[data-dir="a"] .title{font-size:13px;font-weight:500;letter-spacing:.24em;color:var(--ink-3)}
+
+.app[data-dir="a"] .block{margin:0 0 26px}
+.app[data-dir="a"] .block+.block{border-top:1px solid var(--rule);padding-top:22px}
+.app[data-dir="a"] .block-label{
+  display:block;font-size:11px;font-weight:500;letter-spacing:.2em;color:var(--ink-3);
+  margin:0 0 13px;
+}
+.app[data-dir="a"] .sentence{
+  font-size:30px;line-height:1.42;font-weight:500;letter-spacing:-.004em;margin:0 0 20px;
+}
+.app[data-dir="a"] .sentence .stress{font-style:normal;font-weight:600;color:var(--accent)}
+.app[data-dir="a"] .pause{
+  display:inline-block;width:1px;height:.88em;background:var(--accent);opacity:.72;
+  margin:0 8px;vertical-align:-.08em;
+}
+.app[data-dir="a"] .pitch{color:var(--accent);font-size:.6em;vertical-align:.46em;margin-left:3px}
+.app[data-dir="a"] .annotation{border-left:2px solid rgba(166,58,46,.3);padding-left:15px}
+.app[data-dir="a"] .sub-label{font-size:11px;letter-spacing:.16em;color:var(--ink-3);margin-bottom:11px}
+.app[data-dir="a"] .ann-row{
+  display:grid;grid-template-columns:58px 1fr;gap:12px;padding:7px 0;
+  border-bottom:1px dotted rgba(140,131,117,.42);
+}
+.app[data-dir="a"] .ann-row:last-child{border-bottom:0}
+.app[data-dir="a"] .ann-row dt{font-size:12px;letter-spacing:.06em;color:var(--ink-3)}
+.app[data-dir="a"] .ann-row dd{font-size:13.5px;line-height:1.55;color:var(--ink)}
+.app[data-dir="a"] .ann-row dd em{font-style:normal;font-weight:600;color:var(--accent)}
+.app[data-dir="a"] .ann-note{font-size:12.5px;color:var(--ink-3)}
+.app[data-dir="a"] .translation{font-size:17px;line-height:1.72;color:var(--ink)}
+.app[data-dir="a"] .memory-list li{
+  position:relative;padding-left:16px;font-size:14.5px;line-height:1.68;color:var(--ink-2);
+}
+.app[data-dir="a"] .memory-list li::before{content:'';position:absolute;left:0;top:.66em;width:5px;height:5px;background:var(--primary)}
+.app[data-dir="a"] .memory-list b{font-weight:600;color:var(--primary)}
+.app[data-dir="a"] .grammar-toggle{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  width:100%;padding:10px 0 4px;background:none;border:0;cursor:pointer;text-align:left;font-family:inherit;
+}
+.app[data-dir="a"] .grammar-toggle .block-label{margin:0}
+.app[data-dir="a"] .grammar-meta{font-size:12px;color:var(--ink-3);letter-spacing:.03em;text-align:right}
+.app[data-dir="a"] .chev{color:var(--ink-3);transition:transform .34s cubic-bezier(.16,1,.3,1)}
+.app[data-dir="a"] .chev svg{display:block;width:15px;height:15px}
+.app[data-dir="a"] .grammar-body{padding:12px 0 2px;border-top:1px solid var(--rule);margin-top:12px}
+.app[data-dir="a"] .g-item{
+  display:grid;grid-template-columns:72px 1fr;gap:15px;padding:9px 0;
+  border-bottom:1px dotted rgba(140,131,117,.42);
+}
+.app[data-dir="a"] .g-item:last-child{border-bottom:0}
+.app[data-dir="a"] .g-key{font-size:12px;letter-spacing:.06em;color:var(--ink-3)}
+.app[data-dir="a"] .g-val{font-size:13.5px;line-height:1.62;color:var(--ink-2)}
+.app[data-dir="a"] .g-val b{font-weight:600;color:var(--ink)}
+.app[data-dir="a"] .missing{
+  font-size:13px;font-style:italic;color:var(--ink-3);padding:10px 0 0;
+  border-top:1px dotted rgba(140,131,117,.42);
+}
+.app[data-dir="a"] .block-source .missing{border-top:0;padding-top:2px}
+.app[data-dir="a"] .missing-label{font-style:normal;letter-spacing:.06em}
+.app[data-dir="a"] .missing-label::after{content:' \00b7  '}
+.app[data-dir="a"] .actionbar{padding:15px 22px 21px;border-top:1px solid var(--rule)}
+.app[data-dir="a"] .primary{
+  width:100%;height:52px;display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--primary);color:var(--surface);border:0;border-radius:3px;cursor:pointer;
+  font-family:inherit;font-size:15px;font-weight:500;letter-spacing:.07em;
+  transition:background .18s ease,transform .12s ease;
+}
+.app[data-dir="a"] .primary:hover{background:#233A57}
+.app[data-dir="a"] .primary:active{transform:translateY(1px)}
+.app[data-dir="a"] .primary .ico{font-size:15px;opacity:.88}
+.app[data-dir="a"] :focus-visible{outline:2px solid rgba(43,70,104,.5);outline-offset:2px}
+.app[data-dir="a"] .block{animation:aIn .55s cubic-bezier(.16,1,.3,1) both}
+.app[data-dir="a"] .block:nth-child(1){animation-delay:.02s}
+.app[data-dir="a"] .block:nth-child(2){animation-delay:.07s}
+.app[data-dir="a"] .block:nth-child(3){animation-delay:.12s}
+.app[data-dir="a"] .block:nth-child(4){animation-delay:.17s}
+@keyframes aIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.app[data-dir="ar"]{
+  --bg:#F6F2E8; --surface:#FCFAF4; --ink:#221E19; --ink-2:#544C42; --ink-3:#8C8375;
+  --rule:#DFD6C4; --primary:#2B4668; --accent:#A63A2E;
+  --font-mix:'Spectral','Noto Serif SC',Georgia,'Songti SC','SimSun',serif;
+  background:var(--bg); color:var(--ink); font-family:var(--font-mix);
+  -webkit-font-smoothing:antialiased;
+}
+.app[data-dir="ar"] .phone{background:radial-gradient(125% 72% at 50% 0%,#FDFBF6 0%,#F6F2E8 58%,#EFE8D9 100%)}
+.app[data-dir="ar"] .content{
+  padding:24px 22px 30px;
+  background-image:repeating-linear-gradient(0deg,rgba(140,131,117,.038) 0 1px,transparent 1px 29px);
+}
+.app[data-dir="ar"] .topbar{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  padding:16px 18px 13px;border-bottom:1px solid var(--rule);
+}
+.app[data-dir="ar"] .back,.app[data-dir="ar"] .swap{
+  appearance:none;background:none;border:0;padding:6px 1px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:inherit;font-size:13.5px;letter-spacing:.04em;color:var(--ink-2);
+  transition:color .18s ease;
+}
+.app[data-dir="ar"] .back{justify-self:start}
+.app[data-dir="ar"] .swap{justify-self:end;color:var(--primary);border-bottom:1px solid rgba(43,70,104,.32)}
+.app[data-dir="ar"] .back:hover{color:var(--ink)}
+.app[data-dir="ar"] .back svg{width:13px;height:13px}
+.app[data-dir="ar"] .title{font-size:13px;font-weight:500;letter-spacing:.24em;color:var(--ink-3)}
+
+.app[data-dir="ar"] .block{margin:0 0 26px}
+.app[data-dir="ar"] .block+.block{border-top:1px solid var(--rule);padding-top:22px}
+.app[data-dir="ar"] .block-label{
+  display:block;font-size:11px;font-weight:500;letter-spacing:.2em;color:var(--ink-3);
+  margin:0 0 13px;
+}
+.app[data-dir="ar"] .sentence{
+  font-size:30px;line-height:1.42;font-weight:500;letter-spacing:-.004em;margin:0 0 20px;
+}
+.app[data-dir="ar"] .sentence .stress{font-style:normal;font-weight:600;color:var(--accent)}
+.app[data-dir="ar"] .pause{
+  display:inline-block;width:1px;height:.88em;background:var(--accent);opacity:.72;
+  margin:0 8px;vertical-align:-.08em;
+}
+.app[data-dir="ar"] .pitch{color:var(--accent);font-size:.6em;vertical-align:.46em;margin-left:3px}
+.app[data-dir="ar"] .annotation{border-left:2px solid rgba(166,58,46,.3);padding-left:15px}
+.app[data-dir="ar"] .sub-label{font-size:11px;letter-spacing:.16em;color:var(--ink-3);margin-bottom:11px}
+.app[data-dir="ar"] .ann-row{
+  display:grid;grid-template-columns:58px 1fr;gap:12px;padding:7px 0;
+  border-bottom:1px dotted rgba(140,131,117,.42);
+}
+.app[data-dir="ar"] .ann-row:last-child{border-bottom:0}
+.app[data-dir="ar"] .ann-row dt{font-size:12px;letter-spacing:.06em;color:var(--ink-3)}
+.app[data-dir="ar"] .ann-row dd{font-size:13.5px;line-height:1.55;color:var(--ink)}
+.app[data-dir="ar"] .ann-row dd em{font-style:normal;font-weight:600;color:var(--accent)}
+.app[data-dir="ar"] .ann-note{font-size:12.5px;color:var(--ink-3)}
+.app[data-dir="ar"] .translation{font-size:17px;line-height:1.72;color:var(--ink)}
+.app[data-dir="ar"] .memory-list li{
+  position:relative;padding-left:16px;font-size:14.5px;line-height:1.68;color:var(--ink-2);
+}
+.app[data-dir="ar"] .memory-list li::before{content:'';position:absolute;left:0;top:.66em;width:5px;height:5px;background:var(--primary)}
+.app[data-dir="ar"] .memory-list b{font-weight:600;color:var(--primary)}
+.app[data-dir="ar"] .grammar-toggle{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  width:100%;padding:10px 0 4px;background:none;border:0;cursor:pointer;text-align:left;font-family:inherit;
+}
+.app[data-dir="ar"] .grammar-toggle .block-label{margin:0}
+.app[data-dir="ar"] .grammar-meta{font-size:12px;color:var(--ink-3);letter-spacing:.03em;text-align:right}
+.app[data-dir="ar"] .chev{color:var(--ink-3);transition:transform .34s cubic-bezier(.16,1,.3,1)}
+.app[data-dir="ar"] .chev svg{display:block;width:15px;height:15px}
+.app[data-dir="ar"] .grammar-body{padding:12px 0 2px;border-top:1px solid var(--rule);margin-top:12px}
+.app[data-dir="ar"] .g-item{
+  display:grid;grid-template-columns:72px 1fr;gap:15px;padding:9px 0;
+  border-bottom:1px dotted rgba(140,131,117,.42);
+}
+.app[data-dir="ar"] .g-item:last-child{border-bottom:0}
+.app[data-dir="ar"] .g-key{font-size:12px;letter-spacing:.06em;color:var(--ink-3)}
+.app[data-dir="ar"] .g-val{font-size:13.5px;line-height:1.62;color:var(--ink-2)}
+.app[data-dir="ar"] .g-val b{font-weight:600;color:var(--ink)}
+.app[data-dir="ar"] .missing{
+  font-size:13px;font-style:italic;color:var(--ink-3);padding:10px 0 0;
+  border-top:1px dotted rgba(140,131,117,.42);
+}
+.app[data-dir="ar"] .block-source .missing{border-top:0;padding-top:2px}
+.app[data-dir="ar"] .missing-label{font-style:normal;letter-spacing:.06em}
+.app[data-dir="ar"] .missing-label::after{content:' \00b7  '}
+.app[data-dir="ar"] .actionbar{padding:15px 22px 21px;border-top:1px solid var(--rule)}
+.app[data-dir="ar"] .primary{
+  width:100%;height:52px;display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--primary);color:var(--surface);border:0;border-radius:3px;cursor:pointer;
+  font-family:inherit;font-size:15px;font-weight:500;letter-spacing:.07em;
+  transition:background .18s ease,transform .12s ease;
+}
+.app[data-dir="ar"] .primary:hover{background:#233A57}
+.app[data-dir="ar"] .primary:active{transform:translateY(1px)}
+.app[data-dir="ar"] .primary .ico{font-size:15px;opacity:.88}
+.app[data-dir="ar"] :focus-visible{outline:2px solid rgba(43,70,104,.5);outline-offset:2px}
+.app[data-dir="ar"] .block{animation:aIn .55s cubic-bezier(.16,1,.3,1) both}
+.app[data-dir="ar"] .block:nth-child(1){animation-delay:.02s}
+.app[data-dir="ar"] .block:nth-child(2){animation-delay:.07s}
+.app[data-dir="ar"] .block:nth-child(3){animation-delay:.12s}
+.app[data-dir="ar"] .block:nth-child(4){animation-delay:.17s}
+@keyframes aIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* =====================================================================
+   Direction A — Refined · 追加覆盖层（原 A 的 CSS 一条未改，全部改动在此）
+   ===================================================================== */
+
+/* ---- (1)(3) Vertical rhythm：建立三档阶段刻度 ------------------------------------
+   区段内 10–22px / 阶段之间 40px，比例约 1 : 2 : 4。
+   停顿落在「读完原句 → 理解句意 → 是否深入语法」之间。 */
+.app[data-dir="ar"] .block{margin:0}
+/* 停用原 A 的「每两块之间一条全宽横线」——这是原 A 细分隔线最集中的来源 */
+.app[data-dir="ar"] .block+.block{border-top:0;padding-top:0}
+.app[data-dir="ar"] .block-source{margin:0 0 40px}
+.app[data-dir="ar"] .block-translation{margin:0 0 22px}
+.app[data-dir="ar"] .block-memory{margin:0}
+.app[data-dir="ar"] .block-grammar{margin:0}
+.app[data-dir="ar"] .content{padding:26px 22px 28px}
+
+/* ---- (6) Information hierarchy：分隔线撤掉后，区块标签要承担区域识别 ----------
+   略提亮（原 A 用 --ink-3 #8C8375），让四个阶段的"进入点"更先被看到 */
+.app[data-dir="ar"] .block-label{color:#6B6255}
+
+/* ---- (2)(5) Limited surface treatment：全页唯一的一处轻量 Surface --------------
+   「翻译 + 核心记忆点」同属"理解这一句"这一个学习动作，合并进同一个区段。
+   做法：通栏暖色衬底 —— 左右出血到内容边缘、无边框、无阴影、无圆角。
+   因此它读作页面里的一段衬底（区段），而不是一张浮起的卡片。 */
+.app[data-dir="ar"] .band-understand{
+  background:#F0E9DA;
+  margin:0 -22px 40px;
+  padding:22px 22px 24px;
+}
+/* 区段内部主次仍由文字层级承担：翻译为主，记忆点为次但更易扫到 */
+.app[data-dir="ar"] .translation{font-size:17.5px;line-height:1.74}
+.app[data-dir="ar"] .memory-list li{font-size:14.5px;line-height:1.66}
+.app[data-dir="ar"] .block-memory .block-label{margin-bottom:9px}
+
+/* ---- (4) Divider usage：只在该留的地方留 --------------------------------------
+   原句与教学标注留在页面背景上（保持阅读主轴），撤掉标注行之间的 3 条点线
+   （第 4 行与第 1 行之间本来就没有），改由暖红左轨 + 固定标签列 + 行距建立对照关系 */
+.app[data-dir="ar"] .annotation{border-left:2px solid rgba(166,58,46,.34);padding-left:16px}
+.app[data-dir="ar"] .ann-row{border-bottom:0;padding:9px 0}
+.app[data-dir="ar"] .ann-row:first-child{padding-top:1px}
+.app[data-dir="ar"] .ann-row:last-child{padding-bottom:0}
+
+/* ---- (2)(5) 语法分析：不给 Surface，用标题 + 展开态 + 缩进表达从属 --------------
+   撤掉正文顶部分隔线；展开后内容缩进 22px（进入二级轴向），
+   但标题行仍在主轴上 —— 保证"一眼找到语法分析"和"它从属于原句"同时成立。
+   条目之间的点线保留：它们是同一区域内确有并列关系的内容，正是 Divider 该留的地方。 */
+.app[data-dir="ar"] .grammar-toggle{padding:10px 0 14px}
+.app[data-dir="ar"] .grammar-body{border-top:0;margin-top:0;padding:0 0 2px 22px}
+.app[data-dir="ar"] .g-item{padding:10px 0}
+
+.app[data-dir="b"]{
+  --bg:#EEF1F4; --surface:#FFFFFF; --ink:#0F1418; --ink-2:#48535E; --ink-3:#7C8894;
+  --rule:#D2DAE2; --rule-strong:#B4C0CC; --primary:#12507E; --primary-dark:#0C3E62;
+  --font-sans:'Archivo','Noto Sans SC','Segoe UI','Microsoft YaHei',sans-serif;
+  --font-mono:'IBM Plex Mono',Consolas,'Cascadia Mono','Courier New',monospace;
+  background:var(--bg); color:var(--ink); font-family:var(--font-sans);
+  -webkit-font-smoothing:antialiased;
+}
+.app[data-dir="b"] .phone{background:linear-gradient(180deg,#E8ECF0 0%,#EEF1F4 42%)}
+.app[data-dir="b"] .content{
+  padding:12px 12px 16px;display:flex;flex-direction:column;gap:12px;
+  background-image:
+    linear-gradient(rgba(180,192,204,.30) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(180,192,204,.30) 1px,transparent 1px);
+  background-size:26px 26px;
+}
+.app[data-dir="b"] .topbar{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  padding:10px 12px;background:var(--surface);border-bottom:1px solid var(--rule-strong);
+}
+.app[data-dir="b"] .back,.app[data-dir="b"] .swap{
+  height:34px;padding:0 11px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  background:var(--surface);border:1px solid var(--rule-strong);border-radius:5px;
+  color:var(--ink-2);font-size:13px;font-weight:500;
+  transition:background .16s ease,border-color .16s ease,color .16s ease;
+}
+.app[data-dir="b"] .back{justify-self:start}
+.app[data-dir="b"] .swap{
+  justify-self:end;color:var(--primary);border-color:rgba(18,80,126,.35);
+  font-family:var(--font-mono);font-size:11.5px;letter-spacing:.06em;
+}
+.app[data-dir="b"] .back:hover{background:#F4F7F9;color:var(--ink)}
+.app[data-dir="b"] .swap:hover{background:#EEF4F9;border-color:var(--primary)}
+.app[data-dir="b"] .back svg{width:13px;height:13px}
+.app[data-dir="b"] .title{font-size:15px;font-weight:700;letter-spacing:-.012em}
+
+.app[data-dir="b"] .block{margin:0}
+.app[data-dir="b"] .block-source,
+.app[data-dir="b"] .block-grammar{
+  background:var(--surface);border:1px solid var(--rule);border-radius:6px;
+  box-shadow:0 1px 2px rgba(15,20,24,.06);
+}
+.app[data-dir="b"] .block-source{padding:14px 14px 12px}
+.app[data-dir="b"] .block-grammar{padding:1px 14px 5px}
+.app[data-dir="b"] .block-translation,
+.app[data-dir="b"] .block-memory{
+  padding:13px 2px 14px;border-bottom:1px solid var(--rule);
+}
+.app[data-dir="b"] .block-translation{border-top:1px solid var(--rule)}
+.app[data-dir="b"] .block-label{
+  display:inline-flex;align-items:center;gap:7px;margin:0 0 10px;
+  font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--ink-3);
+}
+.app[data-dir="b"] .block-label::before{content:'';width:3px;height:3px;background:var(--primary);flex:0 0 auto}
+.app[data-dir="b"] .sentence{
+  font-size:26px;line-height:1.4;font-weight:700;letter-spacing:-.025em;margin:2px 0 16px;
+}
+.app[data-dir="b"] .sentence .stress{font-style:normal;border-bottom:2px solid var(--primary);padding-bottom:1px}
+.app[data-dir="b"] .pause{
+  display:inline-block;width:2px;height:.84em;background:var(--rule-strong);
+  margin:0 8px;vertical-align:-.06em;
+}
+.app[data-dir="b"] .pitch{font-family:var(--font-mono);color:var(--primary);font-size:.6em;vertical-align:.5em;margin-left:3px}
+.app[data-dir="b"] .annotation{border-top:1px solid var(--rule);padding-top:11px}
+.app[data-dir="b"] .sub-label{
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink-3);margin-bottom:6px;
+}
+.app[data-dir="b"] .ann-row{
+  display:grid;grid-template-columns:58px 1fr;gap:12px;padding:6px 0;border-bottom:1px solid var(--rule);
+}
+.app[data-dir="b"] .ann-row:last-child{border-bottom:0}
+.app[data-dir="b"] .ann-row dt{
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.05em;color:var(--ink-3);padding-top:2px;
+}
+.app[data-dir="b"] .ann-row dd{font-size:13.5px;line-height:1.5;color:var(--ink)}
+.app[data-dir="b"] .ann-row dd em{font-style:normal;font-weight:700;color:var(--primary)}
+.app[data-dir="b"] .ann-note{font-size:12px;color:var(--ink-3)}
+.app[data-dir="b"] .translation{font-size:16px;font-weight:500;line-height:1.6;color:var(--ink)}
+.app[data-dir="b"] .memory-list li{
+  position:relative;padding-left:14px;font-size:14px;line-height:1.55;color:var(--ink-2);
+}
+.app[data-dir="b"] .memory-list li::before{content:'';position:absolute;left:0;top:.56em;width:5px;height:5px;background:var(--primary);border-radius:1px}
+.app[data-dir="b"] .memory-list b{
+  font-weight:700;color:var(--ink);background:rgba(18,80,126,.09);border-radius:3px;padding:1px 5px;
+}
+.app[data-dir="b"] .grammar-toggle{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  width:100%;padding:13px 0;background:none;border:0;cursor:pointer;text-align:left;font-family:inherit;
+}
+.app[data-dir="b"] .grammar-toggle .block-label{margin:0}
+.app[data-dir="b"] .grammar-meta{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;color:var(--ink-3);text-align:right}
+.app[data-dir="b"] .chev{
+  width:24px;height:24px;border:1px solid var(--rule-strong);border-radius:50%;
+  display:grid;place-items:center;color:var(--ink-2);
+  transition:transform .24s ease,background .2s ease;
+}
+.app[data-dir="b"] .chev svg{display:block;width:13px;height:13px}
+.app[data-dir="b"] .grammar-toggle:hover .chev{background:#F1F5F8}
+.app[data-dir="b"] .grammar-body{
+  display:grid;grid-template-columns:1fr 1fr;gap:0 16px;
+  border-top:1px solid var(--rule);padding:2px 0 10px;
+}
+.app[data-dir="b"] .g-item{padding:11px 0;border-bottom:1px solid var(--rule)}
+.app[data-dir="b"] .g-item:nth-last-child(-n+2){border-bottom:0}
+.app[data-dir="b"] .g-key{
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;color:var(--ink-3);margin-bottom:6px;
+}
+.app[data-dir="b"] .g-val{font-size:13px;line-height:1.52;color:var(--ink)}
+.app[data-dir="b"] .g-val b{font-weight:700;color:var(--primary)}
+.app[data-dir="b"] .missing{
+  font-family:var(--font-mono);font-size:12px;color:var(--ink-3);
+  padding:11px 0;border-top:1px solid var(--rule);
+}
+.app[data-dir="b"] .block-source .missing{border-top:0;padding-bottom:0}
+.app[data-dir="b"] .block-memory .missing{border-top:0;padding:2px 0 0}
+.app[data-dir="b"] .missing-label::after{content:' / '}
+.app[data-dir="b"] .actionbar{padding:12px;background:var(--surface);border-top:1px solid var(--rule-strong)}
+.app[data-dir="b"] .primary{
+  width:100%;height:52px;display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--primary);color:#fff;border:0;border-radius:6px;cursor:pointer;
+  font-family:inherit;font-size:15px;font-weight:700;letter-spacing:.005em;
+  box-shadow:0 1px 3px rgba(18,80,126,.34);
+  transition:background .16s ease,transform .1s ease,box-shadow .16s ease;
+}
+.app[data-dir="b"] .primary:hover{background:var(--primary-dark)}
+.app[data-dir="b"] .primary:active{transform:translateY(1px);box-shadow:0 0 0 rgba(0,0,0,0)}
+.app[data-dir="b"] .primary .ico{font-size:15px}
+.app[data-dir="b"] :focus-visible{outline:2px solid rgba(18,80,126,.55);outline-offset:2px}
+.app[data-dir="b"] .block{animation:bIn .34s cubic-bezier(.2,.8,.3,1) both}
+.app[data-dir="b"] .block:nth-child(1){animation-delay:0s}
+.app[data-dir="b"] .block:nth-child(2){animation-delay:.04s}
+.app[data-dir="b"] .block:nth-child(3){animation-delay:.08s}
+.app[data-dir="b"] .block:nth-child(4){animation-delay:.12s}
+@keyframes bIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+.app[data-dir="c"]{
+  --bg:#FBF5EE; --surface:#FFFFFF; --surface-2:#F4EFE7;
+  --ink:#24211D; --ink-2:#5E574E; --ink-3:#948B7F;
+  --rule:#E8E0D4; --primary:#3E7D72; --primary-soft:#E2EFEB; --warm:#D98E5F;
+  --font-display:'Fraunces','Noto Sans SC','Segoe UI','Microsoft YaHei',serif;
+  --font-sans:'Noto Sans SC','Segoe UI','Microsoft YaHei',sans-serif;
+  background:var(--bg); color:var(--ink); font-family:var(--font-sans);
+  -webkit-font-smoothing:antialiased;
+}
+.app[data-dir="c"] .phone{background:radial-gradient(135% 62% at 50% -12%,#F8EEE1 0%,#FBF5EE 58%,#FDFAF6 100%)}
+.app[data-dir="c"] .content{
+  padding:6px 18px 26px;
+  background-image:radial-gradient(62% 26% at 88% 0%,rgba(217,142,95,.10),transparent 72%);
+}
+.app[data-dir="c"] .topbar{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  padding:18px 18px 10px;
+}
+.app[data-dir="c"] .back,.app[data-dir="c"] .swap{
+  height:36px;padding:0 15px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  background:var(--surface);border:1px solid var(--rule);border-radius:999px;
+  color:var(--ink-2);font-family:inherit;font-size:13.5px;font-weight:500;
+  transition:transform .18s cubic-bezier(.16,1,.3,1),box-shadow .18s ease,background .18s ease;
+}
+.app[data-dir="c"] .back{justify-self:start}
+.app[data-dir="c"] .swap{justify-self:end;color:var(--primary);background:var(--primary-soft);border-color:transparent;font-weight:600}
+.app[data-dir="c"] .back:hover,.app[data-dir="c"] .swap:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(36,33,29,.10)}
+.app[data-dir="c"] .back svg{width:13px;height:13px}
+.app[data-dir="c"] .title{font-size:15px;font-weight:600;letter-spacing:.02em}
+
+.app[data-dir="c"] .block{margin:0 0 28px}
+.app[data-dir="c"] .block:last-child{margin-bottom:6px}
+.app[data-dir="c"] .block-source{
+  background:var(--surface);border-radius:20px;padding:20px 18px;
+  box-shadow:0 8px 28px rgba(36,33,29,.075);margin-bottom:28px;
+}
+.app[data-dir="c"] .block-label{
+  display:inline-flex;align-items:center;gap:9px;margin:0 0 14px;
+  font-size:11.5px;font-weight:600;letter-spacing:.07em;color:var(--primary);
+}
+.app[data-dir="c"] .block-label::before{content:'';width:3px;height:14px;border-radius:2px;background:var(--primary);opacity:.45;flex:0 0 auto}
+.app[data-dir="c"] .sentence{
+  font-family:var(--font-display);font-size:28px;line-height:1.5;font-weight:500;margin:0 0 18px;
+}
+.app[data-dir="c"] .sentence .stress{
+  font-style:normal;background:linear-gradient(transparent 66%,rgba(62,125,114,.22) 66%);border-radius:2px;
+}
+.app[data-dir="c"] .pause{
+  display:inline-block;width:4px;height:.72em;border-radius:999px;background:var(--warm);
+  margin:0 9px;vertical-align:.03em;
+}
+.app[data-dir="c"] .pitch{
+  display:inline-grid;place-items:center;width:1.2em;height:1.2em;border-radius:999px;
+  background:var(--primary-soft);color:var(--primary);font-size:.5em;vertical-align:.86em;margin-left:4px;
+}
+.app[data-dir="c"] .annotation{margin-top:4px}
+.app[data-dir="c"] .sub-label{font-size:11.5px;font-weight:600;letter-spacing:.06em;color:var(--ink-3);margin-bottom:13px}
+.app[data-dir="c"] .ann-row{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;margin-bottom:11px}
+.app[data-dir="c"] .ann-row:last-child{margin-bottom:0}
+.app[data-dir="c"] .ann-row dt{
+  font-size:11.5px;font-weight:600;color:var(--primary);background:var(--primary-soft);
+  border-radius:999px;padding:3px 11px;white-space:nowrap;
+}
+.app[data-dir="c"] .ann-row dd{font-size:14px;line-height:1.68;color:var(--ink-2);padding-top:2px}
+.app[data-dir="c"] .ann-row dd em{font-family:var(--font-display);font-style:normal;font-weight:600;color:var(--ink)}
+.app[data-dir="c"] .ann-note{font-size:13px;color:var(--ink-3)}
+.app[data-dir="c"] .translation{font-family:var(--font-display);font-size:19px;line-height:1.72;font-weight:500;color:var(--ink)}
+.app[data-dir="c"] .memory-list li{
+  position:relative;padding-left:19px;font-size:14.5px;line-height:1.78;color:var(--ink-2);
+}
+.app[data-dir="c"] .memory-list li::before{
+  content:'';position:absolute;left:0;top:.74em;width:7px;height:7px;border-radius:999px;
+  background:var(--primary);opacity:.34;
+}
+.app[data-dir="c"] .memory-list b{font-family:var(--font-display);font-weight:600;color:var(--primary)}
+.app[data-dir="c"] .grammar-toggle{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  width:100%;padding:15px 17px;background:var(--surface-2);border:0;border-radius:14px;
+  cursor:pointer;text-align:left;font-family:inherit;
+  transition:background .2s ease;
+}
+.app[data-dir="c"] .grammar-toggle:hover{background:#EFE9DF}
+.app[data-dir="c"] .grammar-toggle .block-label{margin:0}
+.app[data-dir="c"] .grammar-meta{font-size:11.5px;color:var(--ink-3);text-align:right}
+.app[data-dir="c"] .chev{
+  width:26px;height:26px;border-radius:999px;background:var(--surface);
+  display:grid;place-items:center;color:var(--primary);
+  transition:transform .38s cubic-bezier(.16,1,.3,1);
+}
+.app[data-dir="c"] .chev svg{display:block;width:13px;height:13px}
+.app[data-dir="c"] .grammar-body{
+  background:var(--surface-2);border-radius:14px;margin-top:10px;padding:4px 17px 12px;
+}
+.app[data-dir="c"] .g-item{padding:12px 0;border-bottom:1px dashed rgba(148,139,127,.34)}
+.app[data-dir="c"] .g-item:last-child{border-bottom:0}
+.app[data-dir="c"] .g-key{font-size:11.5px;font-weight:600;letter-spacing:.05em;color:var(--ink-3);margin-bottom:6px}
+.app[data-dir="c"] .g-val{font-size:13.5px;line-height:1.72;color:var(--ink-2)}
+.app[data-dir="c"] .g-val b{font-family:var(--font-display);font-weight:600;color:var(--primary)}
+.app[data-dir="c"] .missing{font-size:13.5px;color:var(--ink-3);padding:12px 0 2px}
+.app[data-dir="c"] .block-source .missing{padding:2px 0 0}
+.app[data-dir="c"] .block-memory .missing{padding:2px 0 0}
+.app[data-dir="c"] .missing-label::after{content:' \00b7  '}
+.app[data-dir="c"] .actionbar{
+  padding:12px 18px 22px;
+  background:linear-gradient(to top,var(--bg) 58%,rgba(251,245,238,0));
+}
+.app[data-dir="c"] .primary{
+  width:100%;height:54px;display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--primary);color:#fff;border:0;border-radius:16px;cursor:pointer;
+  font-family:inherit;font-size:15.5px;font-weight:600;letter-spacing:.01em;
+  box-shadow:0 10px 22px rgba(62,125,114,.28);
+  transition:transform .18s cubic-bezier(.16,1,.3,1),box-shadow .18s ease,background .18s ease;
+}
+.app[data-dir="c"] .primary:hover{background:#376F65;transform:translateY(-1px);box-shadow:0 12px 26px rgba(62,125,114,.32)}
+.app[data-dir="c"] .primary:active{transform:translateY(1px);box-shadow:0 6px 14px rgba(62,125,114,.26)}
+.app[data-dir="c"] .primary .ico{font-size:15px}
+.app[data-dir="c"] :focus-visible{outline:2px solid rgba(62,125,114,.6);outline-offset:3px}
+.app[data-dir="c"] .block{animation:cIn .62s cubic-bezier(.16,1,.3,1) both}
+.app[data-dir="c"] .block:nth-child(1){animation-delay:0s}
+.app[data-dir="c"] .block:nth-child(2){animation-delay:.08s}
+.app[data-dir="c"] .block:nth-child(3){animation-delay:.16s}
+.app[data-dir="c"] .block:nth-child(4){animation-delay:.24s}
+@keyframes cIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.app[data-dir="d"]{
+  --bg:#F7F4EE; --paper:#FDFCF9;
+  --ink:#201D19; --ink-2:#5B5346; --ink-3:#8F8778;
+  --line:rgba(90,82,70,.14); --line-soft:rgba(90,82,70,.075);
+  --tint:rgba(44,69,98,.055);      /* 结论带 */
+  --tint-2:rgba(90,82,70,.05);     /* 资料内嵌 */
+  --tag:rgba(90,82,70,.08);
+  --primary:#2C4562; --accent:#9C3E30;   /* 主蓝=结构/动作，暖红=教学标注 */
+  --font-read:'Literata','Noto Serif SC',Georgia,'Songti SC',serif;
+  --font-tag:'Noto Sans SC','Segoe UI','Microsoft YaHei',system-ui,sans-serif;
+  background:var(--bg); color:var(--ink); font-family:var(--font-read);
+  -webkit-font-smoothing:antialiased;
+}
+.app[data-dir="d"] .phone{background:linear-gradient(180deg,#F8F5EF 0%,#F7F3EC 100%)}
+.app[data-dir="d"] .content{padding:20px 20px 26px}
+
+/* ---- 导航：功能边界（规则 2 允许用线） ---- */
+.app[data-dir="d"] .topbar{
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  padding:15px 20px 12px;border-bottom:1px solid var(--line);
+}
+.app[data-dir="d"] .back,.app[data-dir="d"] .swap{
+  appearance:none;background:none;border:0;padding:6px 0;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:var(--font-tag);font-size:13px;letter-spacing:.05em;color:var(--ink-2);
+  transition:color .18s ease;
+}
+.app[data-dir="d"] .back{justify-self:start}
+.app[data-dir="d"] .swap{
+  justify-self:end;color:var(--primary);border-bottom:1px solid rgba(44,69,98,.3);
+}
+.app[data-dir="d"] .back:hover{color:var(--ink)}
+.app[data-dir="d"] .back svg{width:13px;height:13px}
+.app[data-dir="d"] .title{
+  font-family:var(--font-tag);font-size:11.5px;font-weight:500;letter-spacing:.24em;color:var(--ink-3);
+}
+
+/* ---- 组间分隔：只用留白，一律不留线（规则 2） ----
+       组间 32px ≈ 组内 10–12px 的 3 倍，靠比例差而不是靠线来分区 */
+.app[data-dir="d"] .block{margin:0 0 32px}
+.app[data-dir="d"] .block:last-child{margin-bottom:6px}
+
+/* ---- 标识体：区块标签 + 短横线刻度（替代 A 的整条分隔线） ---- */
+.app[data-dir="d"] .block-label{
+  display:inline-flex;align-items:center;gap:9px;
+  font-family:var(--font-tag);font-size:11px;font-weight:500;letter-spacing:.18em;
+  color:var(--ink-3);margin:0 0 12px;
+}
+.app[data-dir="d"] .block-label::before{
+  content:'';width:16px;height:1px;background:rgba(90,82,70,.42);flex:0 0 auto;
+}
+
+/* ---- 表面 1 · 纸面：被讲解的对象（原句）。全页唯一有边框的表面 ---- */
+.app[data-dir="d"] .block-source{
+  background:var(--paper);border:1px solid var(--line);border-radius:6px;
+  padding:17px 17px 15px;margin-bottom:34px;
+  box-shadow:0 1px 2px rgba(33,30,26,.035);
+}
+.app[data-dir="d"] .sentence{
+  font-family:var(--font-read);font-size:29px;line-height:1.44;font-weight:500;
+  letter-spacing:-.003em;margin:0 0 18px;
+}
+.app[data-dir="d"] .sentence .stress{font-style:normal;font-weight:600;color:var(--accent)}
+.app[data-dir="d"] .pause{
+  display:inline-block;width:1px;height:.78em;background:rgba(156,62,48,.5);
+  margin:0 9px;vertical-align:-.06em;
+}
+.app[data-dir="d"] .pitch{color:var(--accent);font-size:.58em;vertical-align:.52em;margin-left:3px}
+
+/* ---- 附着轨：教学标注。靠轨线表达"从属于上句"，不用容器（规则 1 例外） ---- */
+.app[data-dir="d"] .annotation{border-left:2px solid rgba(156,62,48,.22);padding:3px 0 0 14px}
+.app[data-dir="d"] .sub-label{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--font-tag);font-size:10.5px;font-weight:500;letter-spacing:.18em;
+  color:var(--ink-3);margin:0 0 11px;
+}
+.app[data-dir="d"] .sub-label::before{content:'';width:9px;height:1px;background:rgba(90,82,70,.38)}
+.app[data-dir="d"] .ann-list{margin:0}
+.app[data-dir="d"] .ann-row{
+  display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:6px 0;
+}
+/* 标签职责之一：把分类键从内容里分离出来（规则 4）——方标，不用胶囊 */
+.app[data-dir="d"] .ann-row dt{
+  font-family:var(--font-tag);font-size:10.5px;font-weight:500;letter-spacing:.08em;
+  color:var(--ink-2);background:var(--tag);border-radius:3px;padding:2px 8px;
+  white-space:nowrap;justify-self:start;
+}
+.app[data-dir="d"] .ann-row dd{font-size:13.5px;line-height:1.6;color:var(--ink);padding-top:2px}
+.app[data-dir="d"] .ann-row dd em{font-style:normal;font-weight:600;color:var(--accent)}
+.app[data-dir="d"] .ann-note{font-family:var(--font-tag);font-size:12px;color:var(--ink-3)}
+
+/* ---- 翻译：不给任何表面，只给最大的一块留白与标识体标签 ---- */
+.app[data-dir="d"] .translation{
+  font-family:var(--font-read);font-size:18px;line-height:1.78;font-weight:500;color:var(--ink);
+}
+
+/* ---- 表面 2 · 色带：要带走的结论（核心记忆点）。唯一的蓝墨染底 ---- */
+.app[data-dir="d"] .block-memory{
+  background:var(--tint);border-radius:4px;padding:15px 16px 14px;margin-bottom:30px;
+}
+.app[data-dir="d"] .block-memory .block-label{color:var(--primary);margin-bottom:10px}
+.app[data-dir="d"] .block-memory .block-label::before{background:rgba(44,69,98,.45)}
+.app[data-dir="d"] .memory-list li{
+  position:relative;padding-left:15px;font-size:14.5px;line-height:1.7;color:var(--ink-2);
+}
+.app[data-dir="d"] .memory-list li::before{
+  content:'';position:absolute;left:0;top:.66em;width:6px;height:1px;background:rgba(44,69,98,.5);
+}
+.app[data-dir="d"] .memory-list b{font-weight:600;color:var(--primary)}
+
+/* ---- 语法分析：收起=一行标识体（无表面）；展开=表面 3 · 内嵌（规则 1） ----
+       表面跟着内容出现，而不是跟着结构出现 */
+.app[data-dir="d"] .grammar-toggle{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+  width:100%;padding:13px 0 15px;background:none;border:0;cursor:pointer;text-align:left;
+  font-family:inherit;
+}
+.app[data-dir="d"] .grammar-toggle .block-label{margin:0}
+.app[data-dir="d"] .grammar-meta{
+  font-family:var(--font-tag);font-size:11px;letter-spacing:.02em;color:var(--ink-3);text-align:right;
+}
+.app[data-dir="d"] .chev{color:var(--ink-3);transition:transform .4s cubic-bezier(.16,1,.3,1)}
+.app[data-dir="d"] .chev svg{display:block;width:16px;height:16px}
+.app[data-dir="d"] .grammar-body{
+  background:var(--tint-2);border-radius:4px;padding:4px 16px 12px;margin-top:2px;
+}
+/* 线只出现在同一组内的并列条目之间（规则 2） */
+.app[data-dir="d"] .g-item{padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.app[data-dir="d"] .g-item:last-child{border-bottom:0}
+.app[data-dir="d"] .g-key{
+  font-family:var(--font-tag);font-size:10.5px;font-weight:500;letter-spacing:.16em;
+  color:var(--ink-3);margin-bottom:6px;
+}
+.app[data-dir="d"] .g-val{font-size:13.5px;line-height:1.68;color:var(--ink-2)}
+.app[data-dir="d"] .g-val b{font-weight:600;color:var(--ink)}
+
+/* ---- 降级态：标签职责之二（规则 4） ---- */
+.app[data-dir="d"] .missing{
+  font-family:var(--font-tag);font-size:12.5px;line-height:1.7;color:var(--ink-3);
+  padding:11px 0 0;
+}
+.app[data-dir="d"] .block-source .missing{padding:10px 0 0}
+.app[data-dir="d"] .block-memory .missing{padding:0}
+.app[data-dir="d"] .missing-label{
+  display:inline-block;background:var(--tag);border-radius:3px;padding:1px 7px;
+  margin-right:8px;letter-spacing:.04em;
+}
+.app[data-dir="d"] .missing-label::after{content:''}
+
+/* ---- 主操作：功能边界 + 唯一实心主色块 ---- */
+.app[data-dir="d"] .actionbar{padding:14px 20px 20px;border-top:1px solid var(--line);background:var(--bg)}
+.app[data-dir="d"] .primary{
+  width:100%;height:52px;display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--primary);color:#FCFAF4;border:0;border-radius:6px;cursor:pointer;
+  font-family:var(--font-tag);font-size:15px;font-weight:600;letter-spacing:.06em;
+  box-shadow:0 1px 2px rgba(44,69,98,.2);
+  transition:background .18s ease,transform .12s ease,box-shadow .18s ease;
+}
+.app[data-dir="d"] .primary:hover{background:#243A53;box-shadow:0 2px 5px rgba(44,69,98,.24)}
+.app[data-dir="d"] .primary:active{transform:translateY(1px);box-shadow:0 0 0 rgba(0,0,0,0)}
+.app[data-dir="d"] .primary .ico{font-size:15px;opacity:.9}
+.app[data-dir="d"] :focus-visible{outline:2px solid rgba(44,69,98,.5);outline-offset:2px}
+.app[data-dir="d"] .block{animation:dIn .6s cubic-bezier(.16,1,.3,1) both}
+.app[data-dir="d"] .block:nth-child(1){animation-delay:.02s}
+.app[data-dir="d"] .block:nth-child(2){animation-delay:.07s}
+.app[data-dir="d"] .block:nth-child(3){animation-delay:.12s}
+.app[data-dir="d"] .block:nth-child(4){animation-delay:.17s}
+@keyframes dIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
+body{
+  margin:0;background:#EFEFEF;color:#1B1B1B;
+  font-family:system-ui,-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.cbar{
+  position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;
+  padding:12px 20px;background:rgba(255,255,255,.95);backdrop-filter:blur(10px);
+  border-bottom:1px solid #DCDCDC;
+}
+.cbar h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em}
+.cbar .sub{font-size:12px;color:#6A6A6A;font-weight:400}
+.ctrl{display:flex;align-items:center;gap:8px;font-size:12px;color:#3A3A3A}
+.ctrl input[type=range]{width:118px;accent-color:#1B1B1B}
+.ctrl button{
+  border:1px solid #D5D5D5;background:#fff;border-radius:6px;padding:5px 11px;
+  font:inherit;font-size:12px;cursor:pointer;color:#2A2A2A;
+}
+.ctrl button:hover{background:#F5F5F5;border-color:#BFBFBF}
+.ctrl label{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.ctrl input[type=checkbox]{accent-color:#1B1B1B}
+.lock{
+  margin:14px 20px 0;padding:11px 15px;background:#fff;border:1px solid #E3E3E3;border-radius:8px;
+  font-size:12px;line-height:1.75;color:#3A3A3A;
+}
+.lock b{font-weight:650}
+.lock .k{display:inline-block;background:#F1F1F1;border-radius:4px;padding:1px 7px;margin:0 1px;white-space:nowrap}
+.rules{
+  margin:10px 20px 0;padding:12px 15px;background:#fff;border:1px solid #E3E3E3;border-left:3px solid #2C4562;
+  border-radius:8px;font-size:12px;line-height:1.85;color:#3A3A3A;
+}
+.rules b{font-weight:650}
+.rules ol{margin:7px 0 0;padding-left:18px}
+.rules li{margin:0 0 3px}
+.rules .k{display:inline-block;background:#F3F4F6;border-radius:4px;padding:1px 7px;margin:0 1px;white-space:nowrap}
+.stage{display:flex;gap:30px;align-items:flex-start;padding:22px 20px 70px;overflow-x:auto}
+.col{flex:0 0 auto}
+.col.is-off{display:none}
+.col-head{margin-bottom:13px}
+.col-head .dname{font-size:15px;font-weight:650}
+.col-head .dsub{margin-top:4px;font-size:12px;line-height:1.55;color:#6A6A6A}
+.col-head .dfile{margin-top:6px;font-family:Consolas,monospace;font-size:11px;color:#8E8E8E}
+.scaler{width:calc(390px * var(--s));height:calc(844px * var(--s));position:relative}
+.scaler > .app{position:absolute;top:0;left:0;transform:scale(var(--s))}
+.compare .phone{border-radius:34px;box-shadow:0 18px 44px rgba(0,0,0,.13),0 0 0 1px #D6D6D6}
+.subframes{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.subframe .scaler{margin-top:0}
+.subframe .cap{margin-top:7px;font-size:11px;line-height:1.45;color:#6A6A6A;width:calc(390px * var(--s))}
+.legend{margin:0 20px 8px;font-size:11.5px;color:#8A8A8A}
+.motion-hint{font-size:11.5px;color:#8A8A8A}
+
+</style>
+</head>
+<body class="compare">
+
+<div class="cbar">
+  <div>
+    <h1>句子讲解页 · Original A &nbsp;vs&nbsp; A — Refined</h1>
+    <div class="sub">同一页面 · 同一内容 · 同一状态集 · 同一主操作 · 只改信息组织</div>
+  </div>
+  <div class="ctrl"><span>主帧缩放</span><input id="scale-main" type="range" min="0.42" max="1" step="0.01" value="0.95"></div>
+  <div class="ctrl"><span>状态帧缩放</span><input id="scale-sub" type="range" min="0.22" max="0.5" step="0.02" value="0.34"></div>
+  <div class="ctrl">
+    <label><input type="checkbox" class="col-toggle" value="a" checked>A</label><label><input type="checkbox" class="col-toggle" value="ar" checked>A · Refined</label><label><input type="checkbox" class="col-toggle" value="b">B</label><label><input type="checkbox" class="col-toggle" value="c">C</label><label><input type="checkbox" class="col-toggle" value="d">D</label>
+  </div>
+  <div class="ctrl">
+    <button id="btn-reset" type="button">全部收起语法</button>
+    <button id="btn-expand" type="button">全部展开语法</button>
+    <button id="btn-degrade" type="button">全部降级</button>
+  </div>
+  <div class="ctrl"><label><input id="motion-on" type="checkbox">播放入场动效</label></div>
+  <div class="motion-hint" id="motion-hint"></div>
+</div>
+
+<div class="lock">
+  <b>本轮锁定的变量（Original A 与 A — Refined 完全一致）：</b>
+  <span class="k">页面 · 句子讲解页</span>
+  <span class="k">viewport 390 × 844</span>
+  <span class="k">西语句子 ¿Dónde está la biblioteca?</span>
+  <span class="k">中文内容</span>
+  <span class="k">信息结构</span>
+  <span class="k">功能（3 个状态）</span>
+  <span class="k">主操作「去跟读」</span>
+  <span class="k">页面交互</span><br>
+  <b>本轮唯一的变量：</b>Content grouping · Whitespace · Vertical rhythm · Divider usage · Limited surface treatment · Information hierarchy。<br>
+  配色、Typography 气质、页面背景、导航与按钮性格、弱装饰性均沿用原 A —— 第一眼仍应被认成「这是原来的 Direction A」。
+  字体色值间距圆角仍为表达方向用的临时值，不是 Design Tokens。<br>
+  <b>工具条里的 B / C / D</b> 是前几轮的材料，默认收起，可勾回参照。
+</div>
+
+<div class="rules">
+  <b>Direction A &nbsp;→&nbsp; A — Refined 的改动清单（可逐条对照检查）：</b>
+  <ol>
+    <li><b>Divider 收窄用途（最主要的一条）。</b>撤掉「原句 / 翻译 / 记忆点 / 语法」之间的 <strong>3 条全宽横线</strong>（原 A 里 <span class="k">.block + .block</span> 的顶边）、<strong>教学标注内 3 条点线</strong>与<strong>语法正文顶边</strong>。Divider 此后只保留在语法条目（同一区域内确有并列关系）与导航 / 操作区两条功能边界上。<br>
+      一屏线数：<strong>默认态 8 → 2</strong>（只剩导航与操作区两条功能边界）；<strong>语法展开后 12 → 5</strong>（另增的 3 条都是语法区段内部的并列条目线）。</li>
+    <li><b>一处轻量 Surface（全页唯一）。</b>翻译与核心记忆点同属「理解这一句」这一个学习动作，合并进同一个<strong>理解区段</strong>：通栏暖色衬底 <span class="k">#F0E9DA</span>，左右出血到内容边缘、<strong>无边框 · 无阴影 · 无圆角</strong>。因为它是通栏衬底而不是内缩卡片，读作页面里的一段衬底而非浮起的卡片。</li>
+    <li><b>语法分析不包 Surface。</b>用标题 + 展开态 + 内容缩进 22px 表达从属；标题行仍留在主轴（x=22）上，保证「一眼找到语法分析」与「它从属于原句」同时成立。</li>
+    <li><b>原句与教学标注留在页面背景上。</b>保持阅读主轴，不给表面；撤掉点线后，靠原有暖红左轨 + 固定标签列 + 行距建立对照关系。</li>
+    <li><b>阶段刻度。</b>区段内 10–22px / 阶段之间 40px（≈1 : 2 : 4）。停顿落在「读完原句 → 理解句意 → 是否深入语法」之间；留白用来表达内容关系，而不是把页面撑开。</li>
+    <li><b>进入点。</b>分隔线撤掉后由区块标签承担区域识别，因此把它从 <span class="k">--ink-3 #8C8375</span> 略提亮到 <span class="k">#6B6255</span>。</li>
+    <li><b>实现方式可核验。</b>Refined 的 CSS 是「原 A 的 CSS + 一段追加覆盖层」；覆盖层每条选择器都带 <span class="k">[data-dir="ar"]</span>，原 A 的基础声明一条未改。DOM 上只新增了一个分组容器（把翻译与记忆点包在一起），无新增内容、无交互改动。</li>
+  </ol>
+</div>
+
+<div class="stage"><section class="col" data-dir="a"><div class="col-head"><div class="dname">Direction A · 语句手札</div><div class="dsub">沉静的研读材料：原句为锚，批注式讲解，版面像一份精心编排的阅读材料。</div><div class="dfile">direction-a.html</div></div><div class="scaler main" style="--s:.95"><div class="app" data-dir="a" data-state="default">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="legend">状态 1 · 成功态（语法分析默认收起）</div><div class="subframes"><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="a" data-state="expanded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 2 · 语法分析展开态</div></div><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="a" data-state="degraded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 3 · 部分内容未生成（降级）</div></div></div></section><section class="col" data-dir="ar"><div class="col-head"><div class="dname">Direction A — Refined · 语句手札</div><div class="dsub">在原 A 上做的一次定向 edit：收窄 Divider 用途、加一处轻量理解区段、用阶段留白建立纵向节奏。第一眼仍是 A。</div><div class="dfile">direction-a-refined.html</div></div><div class="scaler main" style="--s:.95"><div class="app" data-dir="ar" data-state="default">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <div class="band-understand">
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      </div>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="legend">状态 1 · 成功态（语法分析默认收起）</div><div class="subframes"><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="ar" data-state="expanded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <div class="band-understand">
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      </div>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 2 · 语法分析展开态</div></div><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="ar" data-state="degraded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <div class="band-understand">
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      </div>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 3 · 部分内容未生成（降级）</div></div></div></section><section class="col is-off" data-dir="b"><div class="col-head"><div class="dname">Direction B · 朗读练习台</div><div class="dsub">精准的练习工具：功能区域分明，状态语言稳定，信息便于快速扫描。</div><div class="dfile">direction-b.html</div></div><div class="scaler main" style="--s:.95"><div class="app" data-dir="b" data-state="default">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="legend">状态 1 · 成功态（语法分析默认收起）</div><div class="subframes"><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="b" data-state="expanded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 2 · 语法分析展开态</div></div><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="b" data-state="degraded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 3 · 部分内容未生成（降级）</div></div></div></section><section class="col is-off" data-dir="c"><div class="col-head"><div class="dname">Direction C · 听读节奏</div><div class="dsub">从容的学习陪伴：柔和分组与阶段节奏，一次聚焦一个学习动作。</div><div class="dfile">direction-c.html</div></div><div class="scaler main" style="--s:.95"><div class="app" data-dir="c" data-state="default">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="legend">状态 1 · 成功态（语法分析默认收起）</div><div class="subframes"><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="c" data-state="expanded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 2 · 语法分析展开态</div></div><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="c" data-state="degraded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 3 · 部分内容未生成（降级）</div></div></div></section><section class="col is-off" data-dir="d"><div class="col-head"><div class="dname">Direction D · 标注本</div><div class="dsub">A 的阅读气质 + C 的分区能力：以「标识体 / 阅读体」两套字音、刻度化留白和三种明确用途的表面，替代卡片与密排分隔线。</div><div class="dfile">direction-d.html</div></div><div class="scaler main" style="--s:.95"><div class="app" data-dir="d" data-state="default">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="legend">状态 1 · 成功态（语法分析默认收起）</div><div class="subframes"><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="d" data-state="expanded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 2 · 语法分析展开态</div></div><div class="subframe"><div class="scaler sub" style="--s:.34"><div class="app" data-dir="d" data-state="degraded">
+  <div class="phone">
+    <header class="topbar">
+      <button class="back" type="button" aria-label="返回"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.2 5.2 8l4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">返回</span></button>
+      <div class="title">讲解</div>
+      <button class="swap" type="button">换一句</button>
+    </header>
+
+    <main class="content">
+      <section class="block block-source">
+        <div class="block-head"><span class="block-label">原句</span></div>
+        <p class="sentence"><span class="w">¿Dónde</span> <span class="pause" aria-hidden="true"></span><span class="w">está</span> <span class="w">la</span> <span class="w">biblio<em class="stress">TE</em>ca</span><span class="pitch" aria-hidden="true">↗</span><span class="punct">?</span></p>
+
+        <div class="subblock annotation">
+          <div class="sub-label">语调标注</div>
+          <dl class="ann-list">
+            <div class="ann-row"><dt>重音</dt><dd>biblio<em>TE</em>ca</dd></div>
+            <div class="ann-row"><dt>连读</dt><dd>es.ta.la <span class="ann-note">está + la 元音连读</span></dd></div>
+            <div class="ann-row"><dt>停顿</dt><dd>¿Dónde 之后 · 短停</dd></div>
+            <div class="ann-row"><dt>升降调</dt><dd>疑问句：整体先平，句末升调 ↗</dd></div>
+          </dl>
+        </div>
+        <p class="missing"><span class="missing-label">语调标注</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-translation">
+        <div class="block-head"><span class="block-label">翻译</span></div>
+        <p class="translation">图书馆在哪里？</p>
+      </section>
+
+      <section class="block block-memory">
+        <div class="block-head"><span class="block-label">核心记忆点</span></div>
+        <ul class="memory-list"><li>问地点用 <b>¿Dónde + estar?</b></li></ul>
+        <p class="missing"><span class="missing-label">核心记忆点</span>该部分未生成</p>
+      </section>
+
+      <section class="block block-grammar">
+        <button class="grammar-toggle" type="button" aria-expanded="false">
+          <span class="block-label">语法分析</span>
+          <span class="grammar-meta">时态 · 动词变位 · 语序 · 中英对比</span>
+          <span class="chev"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <div class="grammar-body">
+          <div class="g-item"><div class="g-key">时态·语态</div><div class="g-val">现在时 · 陈述式</div></div>
+          <div class="g-item"><div class="g-key">动词变位</div><div class="g-val"><b>está</b> ← estar（第三人称单数）· 表位置，规则变位</div></div>
+          <div class="g-item"><div class="g-key">语序结构</div><div class="g-val">疑问副词 <b>¿Dónde?</b> + 动词 <b>está</b> + 主语 <b>la biblioteca</b></div></div>
+          <div class="g-item"><div class="g-key">中英对比</div><div class="g-val">西语疑问句用倒问号 <b>¿</b>；中文说「图书馆在哪」，西语把动词前置</div></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="primary" type="button"><span class="ico" aria-hidden="true">🎙️</span><span class="t">去跟读</span></button>
+    </footer>
+  </div>
+</div></div><div class="cap">状态 3 · 部分内容未生成（降级）</div></div></div></section></div>
+<script>
+
+(function(){
+  function setState(app, s){
+    app.setAttribute('data-state', s);
+    var t = app.querySelector('.grammar-toggle');
+    if(t) t.setAttribute('aria-expanded', s === 'expanded' ? 'true' : 'false');
+  }
+  document.querySelectorAll('.grammar-toggle').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var app = btn.closest('.app');
+      if(!app || app.getAttribute('data-state') === 'degraded') return;
+      setState(app, app.getAttribute('data-state') === 'expanded' ? 'default' : 'expanded');
+    });
+  });
+  document.querySelectorAll('.solo-switch [data-set]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var app = document.querySelector('.app');
+      if(!app) return;
+      setState(app, b.getAttribute('data-set'));
+      b.parentNode.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+    });
+  });
+  var hash = (location.hash || '').replace('#','');
+  if(['default','expanded','degraded'].indexOf(hash) > -1){
+    document.querySelectorAll('.app').forEach(function(a){ setState(a, hash); });
+    var sw = document.querySelector('.solo-switch [data-set="' + hash + '"]');
+    if(sw){
+      sw.parentNode.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+      sw.classList.add('on');
+    }
+  }
+  document.querySelectorAll('.scaler.sub .app[data-state="expanded"]').forEach(function(app){
+    var content = app.querySelector('.content');
+    var g = app.querySelector('.block-grammar');
+    if(content && g){ content.scrollTop = Math.max(0, g.offsetTop - content.offsetTop - 10); }
+  });
+  var all = document.querySelectorAll('.app');
+  var bExp = document.getElementById('btn-expand');
+  var bCol = document.getElementById('btn-collapse');
+  if(bExp) bExp.addEventListener('click', function(){ all.forEach(function(a){ setState(a,'expanded'); }); });
+  if(bCol) bCol.addEventListener('click', function(){ all.forEach(function(a){ setState(a,'default'); }); });
+  var bDeg = document.getElementById('btn-degrade');
+  if(bDeg) bDeg.addEventListener('click', function(){ all.forEach(function(a){ setState(a,'degraded'); }); });
+  var bReset = document.getElementById('btn-reset');
+  if(bReset) bReset.addEventListener('click', function(){ all.forEach(function(a){ setState(a,'default'); }); });
+
+  var sMain = document.getElementById('scale-main');
+  var sSub = document.getElementById('scale-sub');
+  function applyScales(){
+    document.querySelectorAll('.scaler').forEach(function(el){
+      el.style.setProperty('--s', (el.classList.contains('sub') ? sSub.value : sMain.value));
+    });
+    document.querySelectorAll('.subframe .cap').forEach(function(el, i){
+      var parent = el.closest('.subframe');
+      var sc = parent ? parent.querySelector('.scaler') : null;
+      if(sc) el.style.width = 'calc(390px * ' + sc.style.getPropertyValue('--s') + ')';
+    });
+  }
+  if(sMain && sSub){
+    sMain.addEventListener('input', applyScales);
+    sSub.addEventListener('input', applyScales);
+    applyScales();
+  }
+  document.querySelectorAll('.col-toggle').forEach(function(cb){
+    cb.addEventListener('change', function(){
+      var col = document.querySelector('.col[data-dir="' + cb.value + '"]');
+      if(col) col.classList.toggle('is-off', !cb.checked);
+    });
+  });
+  var mOn = document.getElementById('motion-on');
+  var mHint = document.getElementById('motion-hint');
+  if(mOn){
+    mOn.addEventListener('change', function(){
+      document.querySelectorAll('.compare .app').forEach(function(a){
+        a.classList.toggle('no-motion', !mOn.checked);
+        if(mOn.checked){ void a.offsetWidth; }
+      });
+      if(mHint) mHint.textContent = mOn.checked ? '入场动效：已开启（仅主帧）' : '入场动效：已关闭';
+    });
+    if(mHint) mHint.textContent = '入场动效：已关闭';
+  }
+})();
+
+
+(function(){
+  var sMain = document.getElementById('scale-main');
+  if(!sMain) return;
+  function syncHeads(){
+    document.querySelectorAll('.col').forEach(function(col){
+      var sc = col.querySelector('.scaler.main');
+      var head = col.querySelector('.col-head');
+      if(sc && head) head.style.width = 'calc(390px * ' + sc.style.getPropertyValue('--s') + ')';
+    });
+  }
+  sMain.addEventListener('input', syncHeads);
+  syncHeads();
+})();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "spanish-learning-app",
+  "private": true,
+  "workspaces": [
+    "web",
+    "api"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w web",
+    "dev:api": "npm run dev -w api",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint -w web",
+    "build": "npm run build --workspaces"
+  },
+  "devDependencies": {
+    "next": "^16.3.6"
+  }
+}
