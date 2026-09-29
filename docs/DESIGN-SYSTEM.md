@@ -1,6 +1,6 @@
 # v1 Design System · 语句手札
 
-> 状态：待用户确认。确认后，本文件是 v1 的 **Visual Design Source of Truth**，负责视觉语言、UI 表达和跨页面一致性；不改变产品行为。
+> 状态：已确认。本文件现已正式生效，是 v1 的 **Visual Design Source of Truth**，负责视觉语言、UI 表达和跨页面一致性；不改变产品行为。
 
 ## 1. 依据与使用边界
 
