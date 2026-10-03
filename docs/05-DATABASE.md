@@ -50,6 +50,7 @@ CREATE TABLE user_settings (
 
 - 开启 Row Level Security：用户只能读写自己的 `practice_records` 和 `user_settings`。
 - 前端经 Supabase SDK + 登录态 token 直接访问数据；后端 AI 服务不接触用户数据。
+- 前端使用 Supabase publishable key（`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`）连接项目；用户数据仍由登录态和 RLS 隔离，不在前端使用 Supabase secret key。
 
 ## 5.5 数据生命周期
 

@@ -1,0 +1,9 @@
+.git
+**/.env*
+**/node_modules
+**/.next
+**/out
+**/dist
+**/.tools
+**/.vercel
+**/*.log

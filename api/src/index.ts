@@ -1,6 +1,6 @@
-import Fastify from "fastify";
+import { createServer } from "./app.ts";
 
-const server = Fastify({ logger: true });
+const server = createServer();
 const port = Number(process.env.PORT ?? 3001);
 
 try {

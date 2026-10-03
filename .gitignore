@@ -18,6 +18,7 @@ next-env.d.ts
 *.pfx
 
 # Local tooling artifacts
+.tools/
 .vercel/
 *.log
 .DS_Store
