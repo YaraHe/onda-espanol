@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Converts a browser recording to the mono, 16 kHz WAV required for assessment. */
-export async function transcodeToAssessmentWav(audio: Buffer): Promise<Buffer> {
+export async function transcodeToAssessmentWav(audio: Buffer, signal?: AbortSignal): Promise<Buffer> {
   if (audio.length === 0) throw new Error("Audio is empty");
 
   const workDir = await mkdtemp(join(tmpdir(), "spanish-audio-"));
@@ -16,7 +16,7 @@ export async function transcodeToAssessmentWav(audio: Buffer): Promise<Buffer> {
         "-hide_banner", "-loglevel", "error", "-y",
         "-i", "pipe:0", "-vn", "-ac", "1", "-ar", "16000",
         "-c:a", "pcm_s16le", output,
-      ], { stdio: ["pipe", "ignore", "pipe"] });
+      ], { stdio: ["pipe", "ignore", "pipe"], signal });
 
       let errorOutput = "";
       ffmpeg.stderr.setEncoding("utf8");

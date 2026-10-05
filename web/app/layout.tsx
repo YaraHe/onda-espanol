@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { SentenceDraftProvider } from "./components/sentence-draft";
 import { AuthGate, AuthProvider } from "./components/auth-provider";
@@ -13,6 +14,23 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="zh-CN">
       <body>
+        <Script id="practice-history-guard" strategy="beforeInteractive">{`
+          (() => {
+            let restoring = false;
+            window.addEventListener("popstate", (event) => {
+              if (restoring) {
+                restoring = false;
+                event.stopImmediatePropagation();
+                return;
+              }
+              const confirmLeave = window.__confirmPracticeHistoryLeave;
+              if (!confirmLeave || confirmLeave()) return;
+              event.stopImmediatePropagation();
+              restoring = true;
+              window.history.forward();
+            });
+          })();
+        `}</Script>
         <BackendHealthProbe />
         <SentenceDraftProvider>
           <AuthProvider><AuthGate>{children}</AuthGate></AuthProvider>

@@ -55,7 +55,11 @@
 | `compare` | string | 中英对比 |
 
 > 返回方式：v1 同步非流式（输出短）；后续可升级流式以降低首字延迟。
-> 字段分级：关键字段（`translation`/`structure`）缺失或空 → 服务端重试一次，仍缺返回 `EMPTY_UPSTREAM`；`verbs`/`tenseMood` 需存在且类型正确——无动词句允许 `verbs: []`、`tenseMood: "不适用"`，仅当字段缺失、类型错误或与句子明显不符（句中有动词却返回空）时返回 `EMPTY_UPSTREAM`；非关键字段（`annotation`/`memoryTip`/`compare`）正常讲解应返回，缺失时降级——前端隐藏对应区块并提示「该部分未生成」，不整页报错。
+> 字段分级与确定性校验：`translation`、`structure` 必须为非空字符串；`verbs` 必须为数组，非空时每项的 `form`、`infinitive`、`person`、`notes` 必须为非空字符串；`tenseMood` 必须为非空字符串。真正无动词的句子（如 `¡Hola!`）允许 `verbs: []`、`tenseMood: "不适用"`。以下可确定的矛盾视为无效结果：① `verbs` 为空但 `tenseMood` 不是「不适用」，或 `verbs` 非空却为「不适用」；② `verbs` 为空但 `structure` 明确将句子成分标为「动词」「系动词」「助动词」「谓语动词」或「系词」；③ `verbs` 为空但原句命中下述有界高置信词形规则。关键字段缺失、类型错误或上述矛盾均由服务端重试一次，第二次仍无效则返回 `EMPTY_UPSTREAM`。非关键字段（`annotation`/`memoryTip`/`compare`）正常讲解应返回，缺失时降级——前端隐藏对应区块并提示「该部分未生成」，不整页报错。
+>
+> 当前高置信词形规则仅匹配完整词（忽略大小写与 Unicode 组合写法）：`soy`、`eres`、`es`、`somos`、`sois`；`estoy`、`estás`、`está`、`estamos`、`estáis`、`están`；`hay`。歧义较高的形式只在紧邻、以空白分隔的明确人称线索下判定：`ellos/ellas/ustedes son`、`vos sos`、`yo he`、`tú has`、`él/ella/usted ha`、`nosotros/nosotras hemos`、`vosotros/vosotras habéis`、`ellos/ellas/ustedes han`。这是一组有限的确定性校验规则，不按新发现的动词逐例扩充，也不根据一般词尾推断词性。
+>
+> 服务端不保证独立识别任意自由输入句的所有动词，也不保证翻译、语序和动词分析的全部语言学正确性。若 DeepSeek 的结构合法、字段彼此一致，且未命中上述确定性矛盾，内容仍可能在语言学上错误而返回 200；这属于 AI 教学内容质量风险，不表示错误讲解是预期的产品结果。
 
 **错误情况**
 
@@ -64,7 +68,7 @@
 | `EMPTY_SENTENCE` | 句子为空 | 前端置灰防提交 |
 | `NOT_SPANISH` | 疑似非西语 | 提示确认 |
 | `UPSTREAM_ERROR` | DeepSeek 调用失败 | 提示重试 |
-| `EMPTY_UPSTREAM` | 关键字段缺失/空响应（重试一次后仍缺） | 提示稍后重试 |
+| `EMPTY_UPSTREAM` | 关键字段缺失、类型错误或确定性矛盾（重试一次后仍无效） | 提示稍后重试 |
 
 ## 6.3 POST /api/assess — 口语评估
 

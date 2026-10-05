@@ -16,6 +16,7 @@ export function PageShell({
   children,
   primary,
   backHref,
+  beforeBack,
   extra,
   action,
 }: {
@@ -23,6 +24,7 @@ export function PageShell({
   children: ReactNode;
   primary?: PrimaryPage;
   backHref?: string;
+  beforeBack?: () => boolean;
   extra?: ReactNode;
   action?: ReactNode;
 }) {
@@ -39,7 +41,7 @@ export function PageShell({
           </nav>
         )}
         <header className="page-header">
-          {backHref && <BackLink fallback={backHref} />}
+          {backHref && <BackLink fallback={backHref} beforeNavigate={beforeBack} />}
           <h1>{title}</h1>
           <div className="header-actions">
             {extra}

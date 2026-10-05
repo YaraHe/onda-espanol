@@ -1,6 +1,18 @@
-import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
+import Fastify from "fastify";
+import { createExplainHandler } from "./explain.ts";
+import { createTtsHandler } from "./tts.ts";
+import { createAssessHandler } from "./assess.ts";
 
-export function createServer({ allowedOrigin = process.env.FRONTEND_ORIGIN }: { allowedOrigin?: string } = {}) {
+export function createServer({
+  allowedOrigin = process.env.FRONTEND_ORIGIN,
+  explainFetch,
+  deepSeekKey,
+  ttsFetch,
+  azureSpeechKey,
+  azureSpeechRegion,
+  assessFetch,
+  assessTranscode,
+}: { allowedOrigin?: string; explainFetch?: typeof fetch; deepSeekKey?: string; ttsFetch?: typeof fetch; azureSpeechKey?: string; azureSpeechRegion?: string; assessFetch?: typeof fetch; assessTranscode?: typeof import("./audio/transcode.ts").transcodeToAssessmentWav } = {}) {
   const server = Fastify({ logger: true });
 
   server.addHook("onRequest", async (request, reply) => {
@@ -25,26 +37,29 @@ export function createServer({ allowedOrigin = process.env.FRONTEND_ORIGIN }: { 
 
   server.get("/health", async () => ({ status: "ok" }));
 
-  // Stage 1 only establishes the routes. Stage 2 supplies the documented AI results.
-  const notImplemented = async (_request: FastifyRequest, reply: FastifyReply) =>
-    reply.code(501).send({
-      error: {
-        code: "NOT_IMPLEMENTED",
-        message: "此接口尚未接入",
-      },
-    });
+  server.post("/api/explain", createExplainHandler({ fetcher: explainFetch, apiKey: deepSeekKey }));
+  server.post("/api/tts", createTtsHandler({ fetcher: ttsFetch, apiKey: azureSpeechKey, region: azureSpeechRegion }));
 
-  server.post("/api/explain", notImplemented);
-  server.post("/api/tts", notImplemented);
-
-  // Consume a bounded multipart body so the assess stub returns 501 for its
-  // documented request type. Stage 2 replaces this with actual file parsing.
+  // The multipart envelope may exceed the 10 MB audio limit by a small amount.
   server.addContentTypeParser(
     "multipart/form-data",
-    { parseAs: "buffer", bodyLimit: 10 * 1024 * 1024 },
+    { parseAs: "buffer", bodyLimit: 10 * 1024 * 1024 + 64 * 1024 },
     (_request, body, done) => done(null, body),
   );
-  server.post("/api/assess", { bodyLimit: 10 * 1024 * 1024 }, notImplemented);
+  server.post("/api/assess", {
+    bodyLimit: 10 * 1024 * 1024 + 64 * 1024,
+    errorHandler: (cause, _request, reply) => {
+      if (cause.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+        return reply.code(400).send({ error: { code: "INVALID_AUDIO", message: "录音超过 10MB，请重录" } });
+      }
+      const status = cause.statusCode ?? 500;
+      return reply.code(status).send({ error: status < 500
+        ? { code: "INVALID_PARAM", message: "录音请求格式无效" }
+        : { code: "UPSTREAM_ERROR", message: "发音评估暂时不可用，请稍后重试" } });
+    },
+  }, createAssessHandler({
+    fetcher: assessFetch, transcode: assessTranscode, apiKey: azureSpeechKey, region: azureSpeechRegion,
+  }));
 
   return server;
 }

@@ -1,20 +1,79 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Icon } from "./components/icons";
-import { EmptyText, PageShell, SectionHeading } from "./components/page-shell";
+import { PageShell } from "./components/page-shell";
 import { SentenceEntry } from "./components/sentence-entry";
+import { useSentenceDraft } from "./components/sentence-draft";
+import { ExplainError, fetchExplanation } from "./lib/explanation";
+import { listPracticeRecords, recentSentences } from "./lib/practice-records";
 
 export default function SelectPage() {
+  const router = useRouter();
+  const { sentence, setSentence, setLearning } = useSentenceDraft();
+  const [pending, setPending] = useState(false);
+  const [toast, setToast] = useState("");
+  const [recent, setRecent] = useState<string[]>([]);
+  const [recentStatus, setRecentStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [hadInput, setHadInput] = useState(Boolean(sentence));
+
+  useEffect(() => {
+    let active = true;
+    void listPracticeRecords().then((records) => {
+      if (active) {
+        setRecent(recentSentences(records));
+        setRecentStatus("ready");
+      }
+    }).catch(() => { if (active) setRecentStatus("error"); });
+    return () => { active = false; };
+  }, []);
+
+  async function reloadRecent() {
+    setRecentStatus("loading");
+    try {
+      setRecent(recentSentences(await listPracticeRecords()));
+      setRecentStatus("ready");
+    } catch {
+      setRecentStatus("error");
+    }
+  }
+
+  async function query() {
+    const selected = sentence.trim();
+    if (!selected || pending) return;
+    setToast("");
+    setPending(true);
+    try {
+      const explanation = await fetchExplanation(selected);
+      setLearning(selected, explanation);
+      router.push("/explanation");
+    } catch (cause) {
+      setToast(cause instanceof ExplainError ? cause.message : "查询失败，请稍后重试");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <PageShell title="选句" primary="select">
       <div className="page-stack select-page">
-        <SentenceEntry />
-        <section className="section-block">
-          <SectionHeading>最近练习</SectionHeading>
-          <EmptyText>暂无最近练习</EmptyText>
-        </section>
+        <SentenceEntry onEdit={() => setHadInput(true)} />
+        {(recentStatus !== "ready" || recent.length > 0 || hadInput) && <section className="section-block recent-practices" aria-label="最近练习">
+          <h2 className="section-heading">最近练习</h2>
+          {recentStatus === "loading" && <p className="supporting-copy" role="status">正在加载最近练习…</p>}
+          {recentStatus === "error" && <p className="supporting-copy" role="alert">最近练习加载失败 <button type="button" className="inline-retry" onClick={() => void reloadRecent()}>重试</button></p>}
+          {recentStatus === "ready" && (recent.length
+            ? <ul className="recent-practice-list">{recent.map((item) => <li key={item}><button type="button" lang="es" onClick={() => { setSentence(item); setHadInput(true); }}>{item}</button></li>)}</ul>
+            : <p className="empty-text">暂无</p>)}
+        </section>}
         <div className="select-submit">
-          <button type="button" disabled className="primary-button"><Icon name="search" />查询</button>
+          <button type="button" disabled={!sentence.trim() || pending} className={`primary-button${pending ? " is-loading" : ""}`} onClick={() => void query()}>
+            <Icon name="search" />{pending ? "查询中…" : "查询"}
+          </button>
         </div>
       </div>
+      {toast && <div className="query-toast" role="alert">{toast}<button type="button" onClick={() => setToast("")}>关闭</button></div>}
     </PageShell>
   );
 }
