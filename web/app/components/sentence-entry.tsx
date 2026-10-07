@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { Worker } from "tesseract.js";
 import { Icon } from "./icons";
 import { useSentenceDraft } from "./sentence-draft";
-import { normalizeSpanishOcrText } from "../lib/ocr";
+import { isReliableOcrResult, normalizeSpanishOcrText } from "../lib/ocr";
 import { librarySentences, pickRandomSentence } from "../lib/sentence-library";
 
 export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
@@ -50,8 +50,8 @@ export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
     let worker = activeWorker.current;
     try {
       if (!file.type.startsWith("image/")) throw new Error("Unsupported image");
+      const { createWorker, OEM, PSM } = await import("tesseract.js");
       if (!worker) {
-        const { createWorker, OEM } = await import("tesseract.js");
         const origin = window.location.origin;
         worker = await createWorker("spa", OEM.LSTM_ONLY, {
           workerPath: `${origin}/ocr/worker.min.js`,
@@ -65,10 +65,39 @@ export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
         }
         activeWorker.current = worker;
       }
-      const result = await worker.recognize(file);
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+      let result = await worker.recognize(file, {}, { blocks: true });
       if (run !== ocrRun.current) return;
+      if (!isReliableOcrResult(result.data.text, result.data.confidence) || result.data.confidence < 90) {
+        const { makeTextRegionImage } = await import("../lib/ocr-image");
+        const lines = (result.data.blocks ?? []).flatMap((block) =>
+          block.paragraphs.flatMap((paragraph) => paragraph.lines.map((line) => ({
+            text: line.text,
+            confidence: line.confidence,
+            bbox: line.bbox,
+            words: line.words.map((word) => ({ bbox: word.bbox })),
+          }))),
+        );
+        for (const strategy of ["lines", "pixels"] as const) {
+          const regionImage = await makeTextRegionImage(file, strategy, lines);
+          if (run !== ocrRun.current) return;
+          if (!regionImage) continue;
+          await worker.setParameters({ tessedit_pageseg_mode: regionImage.singleLine ? PSM.SINGLE_LINE : PSM.SINGLE_BLOCK });
+          const regionResult = await worker.recognize(regionImage.image);
+          if (run !== ocrRun.current) return;
+          if (isReliableOcrResult(regionResult.data.text, regionResult.data.confidence)
+            && (!isReliableOcrResult(result.data.text, result.data.confidence)
+              || regionResult.data.confidence >= result.data.confidence + 3)) {
+            result = regionResult;
+          }
+          if (isReliableOcrResult(result.data.text, result.data.confidence)
+            && result.data.confidence >= 90) break;
+        }
+      }
+      if (!isReliableOcrResult(result.data.text, result.data.confidence)) {
+        throw new Error("Low-confidence OCR result");
+      }
       const recognized = normalizeSpanishOcrText(result.data.text);
-      if (!recognized) throw new Error("Empty OCR result");
       if (manualEdit.current === editAtStart) updateSentence(recognized);
     } catch {
       if (run === ocrRun.current) {
