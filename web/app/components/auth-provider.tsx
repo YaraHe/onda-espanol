@@ -4,16 +4,19 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "../lib/supabase";
 import { PageShell } from "./page-shell";
+import { useSentenceDraft } from "./sentence-draft";
 
 type AuthStatus = "checking" | "signed-in" | "signed-out" | "error";
 
 const AuthContext = createContext<{
   status: AuthStatus;
+  userId: string | null;
   refresh: () => Promise<void>;
 } | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("checking");
+  const [userId, setUserId] = useState<string | null>(null);
   const requestId = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -24,15 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
       if (!session) {
-        if (currentRequest === requestId.current) setStatus("signed-out");
+        if (currentRequest === requestId.current) { setUserId(null); setStatus("signed-out"); }
         return;
       }
 
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
-      if (currentRequest === requestId.current) setStatus(user ? "signed-in" : "signed-out");
+      if (currentRequest === requestId.current) { setUserId(user?.id ?? null); setStatus(user ? "signed-in" : "signed-out"); }
     } catch {
-      if (currentRequest === requestId.current) setStatus("error");
+      if (currentRequest === requestId.current) { setUserId(null); setStatus("error"); }
     }
   }, []);
 
@@ -44,9 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ({ data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === "SIGNED_OUT") {
           requestId.current += 1;
+          setUserId(null);
           setStatus("signed-out");
         } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "PASSWORD_RECOVERY") {
           requestId.current += 1;
+          setUserId(session?.user.id ?? null);
           setStatus(session ? "signed-in" : "signed-out");
         }
       }));
@@ -61,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [refresh]);
 
-  return <AuthContext.Provider value={{ status, refresh }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ status, userId, refresh }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
@@ -72,6 +77,7 @@ export function useAuth() {
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { status, refresh } = useAuth();
+  const { clearLearning } = useSentenceDraft();
   const pathname = usePathname();
   const router = useRouter();
   const authPage = pathname === "/login" || pathname === "/login/reset";
@@ -79,6 +85,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status === "signed-out" && !authPage) router.replace("/login");
   }, [authPage, router, status]);
+
+  useEffect(() => {
+    if (status === "signed-out") clearLearning();
+  }, [status, clearLearning]);
 
   if (status === "checking") {
     return <PageShell title="登录状态"><p className="supporting-copy" role="status">正在检查登录状态…</p></PageShell>;

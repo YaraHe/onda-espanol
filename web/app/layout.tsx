@@ -3,6 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 import { SentenceDraftProvider } from "./components/sentence-draft";
 import { AuthGate, AuthProvider } from "./components/auth-provider";
+import { UserSettingsProvider } from "./components/user-settings-provider";
 import { BackendHealthProbe } from "./components/backend-health-probe";
 
 export const metadata: Metadata = {
@@ -33,7 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         `}</Script>
         <BackendHealthProbe />
         <SentenceDraftProvider>
-          <AuthProvider><AuthGate>{children}</AuthGate></AuthProvider>
+          <AuthProvider><UserSettingsProvider><AuthGate>{children}</AuthGate></UserSettingsProvider></AuthProvider>
         </SentenceDraftProvider>
       </body>
     </html>

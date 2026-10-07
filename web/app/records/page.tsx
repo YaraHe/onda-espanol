@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { EmptyText, PageShell, SectionHeading } from "../components/page-shell";
-import { listPracticeRecords, type PracticeRecordSummary } from "../lib/practice-records";
+import { listAllPracticeRecords, type PracticeRecordSummary } from "../lib/practice-records";
+import { groupLatestRecordsByDate } from "../lib/record-view";
 
 export default function RecordsPage() {
   const [records, setRecords] = useState<PracticeRecordSummary[]>([]);
@@ -10,7 +12,7 @@ export default function RecordsPage() {
 
   useEffect(() => {
     let active = true;
-    void listPracticeRecords().then((data) => {
+    void listAllPracticeRecords().then((data) => {
       if (active) { setRecords(data); setStatus("ready"); }
     }).catch(() => { if (active) setStatus("error"); });
     return () => { active = false; };
@@ -18,7 +20,7 @@ export default function RecordsPage() {
 
   async function reload() {
     setStatus("loading");
-    try { setRecords(await listPracticeRecords()); setStatus("ready"); }
+    try { setRecords(await listAllPracticeRecords()); setStatus("ready"); }
     catch { setStatus("error"); }
   }
 
@@ -29,12 +31,19 @@ export default function RecordsPage() {
           <SectionHeading>练习记录</SectionHeading>
           {status === "loading" && <p className="supporting-copy" role="status">正在加载练习记录…</p>}
           {status === "error" && <p className="supporting-copy" role="alert">练习记录加载失败 <button type="button" className="inline-retry" onClick={() => void reload()}>重试</button></p>}
-          {status === "ready" && (records.length ? <ul className="record-list">
-            {records.map((record) => <li key={record.id}>
-              <p lang="es">{record.sentence}</p>
-              <span>{record.overall === null ? "暂无总分" : `总分 ${Math.round(record.overall)}`} · {record.created_at ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(record.created_at)) : "时间未知"}</span>
-            </li>)}
-          </ul> : <EmptyText>还没有练习记录</EmptyText>)}
+          {status === "ready" && (records.length ? groupLatestRecordsByDate(records).map((group) => (
+            <div className="record-date-group" key={group.date}>
+              <h3 className="record-date-heading">{group.date}</h3>
+              <ul className="record-list">
+                {group.records.map((record) => <li key={record.id}>
+                  <Link href={`/records/detail?id=${encodeURIComponent(record.id)}`}>
+                    <span className="record-sentence" lang="es">{record.sentence}</span>
+                    <span className="record-meta">{record.overall === null ? "暂无总分" : `最近得分 ${Math.round(record.overall)}`} · {record.created_at ? new Intl.DateTimeFormat("zh-CN", { timeStyle: "short" }).format(new Date(record.created_at)) : "时间未知"}</span>
+                  </Link>
+                </li>)}
+              </ul>
+            </div>
+          )) : <EmptyText>还没有练习记录</EmptyText>)}
         </section>
       </div>
     </PageShell>

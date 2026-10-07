@@ -19,11 +19,14 @@ export class ExplainError extends Error {
   }
 }
 
-export async function fetchExplanation(sentence: string, lang = "es-ES"): Promise<Explanation> {
+export async function fetchExplanation(sentence: string, lang = "es-ES", signal?: AbortSignal): Promise<Explanation> {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!baseUrl) throw new ExplainError("UPSTREAM_ERROR", "讲解服务暂时不可用，请稍后重试");
 
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) controller.abort();
   const timeout = window.setTimeout(() => controller.abort(), 15_000);
   try {
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/explain`, {
@@ -55,5 +58,6 @@ export async function fetchExplanation(sentence: string, lang = "es-ES"): Promis
     throw new ExplainError("UPSTREAM_ERROR", "网络连接失败，请检查网络后重试");
   } finally {
     window.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }

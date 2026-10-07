@@ -1,14 +1,35 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageShell, SectionHeading } from "../components/page-shell";
 import { PronunciationAnnotation } from "../components/pronunciation-annotation";
 import { useSentenceDraft } from "../components/sentence-draft";
+import { useUserSettings } from "../components/user-settings-provider";
+import { ExplainError, fetchExplanation } from "../lib/explanation";
 
 export default function ExplanationPage() {
   const router = useRouter();
-  const { explainedSentence, explanation, clearLearning } = useSentenceDraft();
+  const { explainedSentence, explanation, learningOrigin, recordReturnId, setRequestedExplanation, clearLearning } = useSentenceDraft();
+  const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
+  const [retry, setRetry] = useState(0);
+  const [queryState, setQueryState] = useState<"loading" | "error">("loading");
+  const [queryError, setQueryError] = useState("");
+
+  useEffect(() => {
+    if (learningOrigin === "select" || !explainedSentence || explanation || !lang) return;
+    const controller = new AbortController();
+    let active = true;
+    void fetchExplanation(explainedSentence, lang, controller.signal).then((result) => {
+      if (active) setRequestedExplanation(result);
+    }).catch((cause) => {
+      if (!active) return;
+      setQueryError(cause instanceof ExplainError ? cause.message : "查询失败，请稍后重试");
+      setQueryState("error");
+    });
+    return () => { active = false; controller.abort(); };
+  }, [explainedSentence, explanation, lang, learningOrigin, retry, setRequestedExplanation]);
 
   function changeSentence() {
     clearLearning();
@@ -18,10 +39,22 @@ export default function ExplanationPage() {
   return (
     <PageShell
       title="句子讲解"
-      backHref="/"
+      backHref={learningOrigin === "library" ? "/library" : learningOrigin === "records" && recordReturnId ? `/records/detail?id=${encodeURIComponent(recordReturnId)}` : "/"}
       action={explanation ? <button type="button" className="primary-button" onClick={() => router.push("/practice")}>去跟读</button> : undefined}
     >
-      {!explanation ? (
+      {!explanation && learningOrigin !== "select" && explainedSentence ? (
+        <div className="page-stack">
+          <section className="section-block">
+            <SectionHeading>原句</SectionHeading>
+            <p className="learning-sentence" lang="es">{explainedSentence}</p>
+          </section>
+          {dialectStatus === "loading" ? <p className="supporting-copy" role="status">正在加载方言设置…</p>
+            : dialectStatus === "error" ? <p className="form-error" role="alert">方言设置加载失败 <button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>
+            : queryState === "loading"
+            ? <p className="supporting-copy" role="status">正在生成讲解…</p>
+            : <p className="form-error" role="alert">{queryError} <button type="button" className="inline-retry" onClick={() => { setQueryState("loading"); setQueryError(""); setRetry((value) => value + 1); }}>重试</button></p>}
+        </div>
+      ) : !explanation ? (
         <div className="section-block">
           <p className="empty-text">先在选句页查询一句西语，讲解会显示在这里。</p>
           <Link href="/" className="inline-link">去选句</Link>

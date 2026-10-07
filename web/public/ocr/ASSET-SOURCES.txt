@@ -1,0 +1,12 @@
+Tesseract.js browser worker: tesseract.js 7.0.0 (Apache-2.0)
+Core JavaScript and WebAssembly: tesseract.js-core 7.0.0 (Apache-2.0)
+Copied from the installed npm packages. The LSTM-only core variants support
+standard, SIMD, and relaxed SIMD browser runtimes. See core/LICENSE.txt and
+worker.min.js.LICENSE.txt.
+
+Spanish model: @tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz
+Source: https://cdn.jsdelivr.net/npm/@tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz
+SHA-256: 40BE52F97B5D4EB7460073DC1F94CD546B27150333C0BF854ED7E7132DB6BCEB
+
+These files are served from the app's own static origin. Recognition runs in
+the user's browser; the selected image is not sent to an OCR service.
