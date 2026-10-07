@@ -18,7 +18,7 @@
 
 ## 5.3 表设计
 
-以下 `user_settings` 播放偏好字段是已批准的 Stage 3 Task 4 目标结构；现有迁移尚未包含它们，须在 Task 4 实施数据库迁移。沿用每用户一行和现有 RLS，不新增表。自定义选择存放可解析的句子引用；具体引用编码由实现决定，不要求某一种句子 ID 方案。
+以下 `user_settings` 播放偏好字段是已批准的 Stage 3 Task 4 结构，由 `202610060001_stage3_listening_preferences.sql` 引入。沿用每用户一行和现有 RLS，不新增表。自定义选择存放可解析的句子引用；具体引用编码由实现决定，不要求某一种句子 ID 方案。
 
 ```sql
 -- 用户资料（Supabase Auth 内置 auth.users，此处存昵称等扩展信息）
@@ -45,7 +45,7 @@ CREATE TABLE user_settings (
   user_id                    UUID PRIMARY KEY REFERENCES auth.users(id),
   lang                       TEXT DEFAULT 'es-ES',
   listening_scope            TEXT NOT NULL DEFAULT 'all' CHECK (listening_scope IN ('learned', 'all', 'custom')),
-  listening_rate             REAL NOT NULL DEFAULT 1.0 CHECK (listening_rate BETWEEN 0.6 AND 1.2),
+  listening_rate             REAL NOT NULL DEFAULT 1.0 CHECK (listening_rate BETWEEN 0.6::REAL AND 1.2::REAL),
   listening_interval_seconds SMALLINT NOT NULL DEFAULT 2 CHECK (listening_interval_seconds IN (1, 2, 4)),
   listening_show_text        BOOLEAN NOT NULL DEFAULT TRUE,
   listening_show_translation BOOLEAN NOT NULL DEFAULT FALSE,
@@ -54,7 +54,7 @@ CREATE TABLE user_settings (
 );
 ```
 
-迁移须让已有 `user_settings` 行得到上述默认播放偏好，并保持现有 `lang` 值。自定义引用只在仍能从当前句库或本人现存练习记录解析到句子时有效；失效引用不计入已选数量，也不能生成播放项。清除练习记录不删除方言或其他播放偏好，但由被清除记录提供、且不在句库中的句子不再可播放。
+初始迁移让已有 `user_settings` 行得到上述默认播放偏好，并保持现有 `lang` 值。`202610070001_fix_listening_rate_bounds.sql` 将原语速约束替换为同类型边界，避免 `REAL` 值 `1.2` 在与双精度常量比较时被错误拒绝。自定义引用只在仍能从当前句库或本人现存练习记录解析到句子时有效；失效引用不计入已选数量，也不能生成播放项。清除练习记录不删除方言或其他播放偏好，但由被清除记录提供、且不在句库中的句子不再可播放。
 
 ## 5.4 权限模型（RLS）
 
