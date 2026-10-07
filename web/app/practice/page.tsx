@@ -7,6 +7,7 @@ import { Icon } from "../components/icons";
 import { EmptyText, PageShell, SectionHeading } from "../components/page-shell";
 import { PronunciationAnnotation } from "../components/pronunciation-annotation";
 import { useSentenceDraft } from "../components/sentence-draft";
+import { useUserSettings } from "../components/user-settings-provider";
 import { AssessmentError, AssessmentResult, fetchAssessment } from "../lib/assessment";
 import { alignAssessmentWords } from "../lib/assessment-alignment";
 import { savePracticeRecord, type PracticeRecordDraft } from "../lib/practice-records";
@@ -15,7 +16,7 @@ import { TtsError, fetchDemoAudio } from "../lib/tts";
 const rates = [0.6, 0.8, 1, 1.2] as const;
 const discardMessage = "结果未保存，确定离开吗？";
 
-function DemoPlayer({ sentence }: { sentence: string }) {
+function DemoPlayer({ sentence, lang }: { sentence: string; lang: "es-ES" | "es-MX" }) {
   const [rate, setRate] = useState<number>(1);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing">("idle");
   const [error, setError] = useState("");
@@ -60,7 +61,7 @@ function DemoPlayer({ sentence }: { sentence: string }) {
     setPhase("loading");
 
     try {
-      const blob = await fetchDemoAudio(sentence, nextRate, controller.signal);
+      const blob = await fetchDemoAudio(sentence, nextRate, controller.signal, lang);
       if (generation !== playback.current.generation) return;
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -108,7 +109,11 @@ function DemoPlayer({ sentence }: { sentence: string }) {
 
 export default function PracticePage() {
   const router = useRouter();
-  const { explainedSentence, explanation, clearLearning } = useSentenceDraft();
+  const { explainedSentence, explanation, repeatPractice, recordReturnId, clearLearning } = useSentenceDraft();
+  const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
+  const practiceSentence = repeatPractice?.sentence ?? explainedSentence;
+  const practiceTranslation = repeatPractice?.translation ?? explanation?.translation;
+  const canPractice = Boolean(practiceSentence && practiceTranslation);
   const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "assessing">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [toast, setToast] = useState("");
@@ -170,9 +175,9 @@ export default function PracticePage() {
   }, []);
 
   async function startRecording() {
-    if (!explanation || !confirmDiscard()) return;
-    const translation = explanation.translation;
-    const assessmentSentence = explainedSentence;
+    if (!practiceTranslation || !canPractice || !lang || !confirmDiscard()) return;
+    const translation = practiceTranslation;
+    const assessmentSentence = practiceSentence;
     const currentGeneration = ++generation.current;
     setPhase("starting");
     setToast("");
@@ -243,7 +248,7 @@ export default function PracticePage() {
         request.current = controller;
         const timeout = window.setTimeout(() => controller.abort(), 30_000);
         setPhase("assessing");
-        void fetchAssessment(audio, assessmentSentence, controller.signal)
+        void fetchAssessment(audio, assessmentSentence, controller.signal, lang)
           .then((assessment) => {
             if (currentGeneration === generation.current) {
               setResult(assessment);
@@ -290,34 +295,36 @@ export default function PracticePage() {
   }
 
   const clock = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
-  const aligned = result ? alignAssessmentWords(explainedSentence, result.words) : null;
+  const aligned = result ? alignAssessmentWords(practiceSentence, result.words) : null;
   const selectedAssessment = selectedWord?.kind === "reference"
     ? aligned?.words[selectedWord.index]?.assessment
     : selectedWord?.kind === "insertion" ? aligned?.insertions[selectedWord.index]?.assessment : null;
   const selectedLabel = selectedWord?.kind === "reference"
     ? aligned?.words[selectedWord.index]?.text
     : selectedWord?.kind === "insertion" ? `多读「${aligned?.insertions[selectedWord.index]?.assessment.word}」` : null;
-  const action = explanation ? <button type="button" className={`primary-button ${phase === "recording" ? "recording-button" : ""} ${phase === "assessing" ? "is-loading" : ""}`}
+  const action = canPractice && lang ? <button type="button" className={`primary-button ${phase === "recording" ? "recording-button" : ""} ${phase === "assessing" ? "is-loading" : ""}`}
     disabled={phase === "starting" || phase === "assessing"}
     onClick={() => phase === "recording" ? stopRecording() : void startRecording()}>
     {phase === "recording" ? <><Icon name="stop" />停止 · {clock}</> : phase === "assessing" ? "评估中…" : phase === "starting" ? "正在请求麦克风…" : <><Icon name="mic" />录音</>}
   </button> : undefined;
 
   return (
-    <PageShell title="跟读练习" backHref="/explanation" beforeBack={confirmDiscard} action={action}>
+    <PageShell title="跟读练习" backHref={repeatPractice && recordReturnId ? `/records/detail?id=${encodeURIComponent(recordReturnId)}` : "/explanation"} beforeBack={confirmDiscard} action={action}>
       <div className="page-stack">
         <section className="section-block">
           <SectionHeading>原句</SectionHeading>
-          {explanation ? (
+          {canPractice ? (
             <>
-              <p className="learning-sentence" lang="es">{explainedSentence}</p>
-              <PronunciationAnnotation annotation={explanation.annotation} />
+              <p className="learning-sentence" lang="es">{practiceSentence}</p>
+              {repeatPractice ? <p className="translation-text">{repeatPractice.translation}</p> : explanation && <PronunciationAnnotation annotation={explanation.annotation} />}
             </>
           ) : (
             <><EmptyText>选定句子后，就可以听示范并练习朗读。</EmptyText><Link href="/" className="inline-link">去选句</Link></>
           )}
         </section>
-        {explanation && <DemoPlayer key={`${explainedSentence}:${demoVersion}`} sentence={explainedSentence} />}
+        {canPractice && dialectStatus === "loading" && <p className="supporting-copy" role="status">正在加载方言设置…</p>}
+        {canPractice && dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败 <button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
+        {canPractice && lang && <DemoPlayer key={`${practiceSentence}:${lang}:${demoVersion}`} sentence={practiceSentence} lang={lang} />}
         {phase === "assessing" && <p className="assessment-status" role="status">正在评估朗读…</p>}
         {result && <section className="section-block assessment-result" aria-label="评分结果">
           <SectionHeading>评分结果</SectionHeading>

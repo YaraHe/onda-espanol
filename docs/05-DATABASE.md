@@ -11,12 +11,14 @@
 | 数据 | 存储位置 | 说明 |
 |---|---|---|
 | 练习记录 | Supabase（云端） | 按用户隔离，登录后读写 |
-| 用户设置（方言） | Supabase（云端） | 按用户隔离 |
+| 用户设置（方言与磨耳朵播放偏好） | Supabase（云端） | 按用户隔离；磨耳朵音频不入库 |
 | 用户资料（昵称） | Supabase（profiles） | 扩展 auth.users |
 | 句库 | 内置静态数据 | v1 保持内置，后续可迁数据库 |
 | 音频（示范/录音） | 不持久化 | 会话内 |
 
 ## 5.3 表设计
+
+以下 `user_settings` 播放偏好字段是已批准的 Stage 3 Task 4 目标结构；现有迁移尚未包含它们，须在 Task 4 实施数据库迁移。沿用每用户一行和现有 RLS，不新增表。自定义选择存放可解析的句子引用；具体引用编码由实现决定，不要求某一种句子 ID 方案。
 
 ```sql
 -- 用户资料（Supabase Auth 内置 auth.users，此处存昵称等扩展信息）
@@ -40,11 +42,19 @@ CREATE TABLE practice_records (
 
 -- 用户设置（每用户一行）
 CREATE TABLE user_settings (
-  user_id    UUID PRIMARY KEY REFERENCES auth.users(id),
-  lang       TEXT DEFAULT 'es-ES',
-  updated_at TIMESTAMPTZ DEFAULT now()
+  user_id                    UUID PRIMARY KEY REFERENCES auth.users(id),
+  lang                       TEXT DEFAULT 'es-ES',
+  listening_scope            TEXT NOT NULL DEFAULT 'all' CHECK (listening_scope IN ('learned', 'all', 'custom')),
+  listening_rate             REAL NOT NULL DEFAULT 1.0 CHECK (listening_rate BETWEEN 0.6 AND 1.2),
+  listening_interval_seconds SMALLINT NOT NULL DEFAULT 2 CHECK (listening_interval_seconds IN (1, 2, 4)),
+  listening_show_text        BOOLEAN NOT NULL DEFAULT TRUE,
+  listening_show_translation BOOLEAN NOT NULL DEFAULT FALSE,
+  listening_custom_selection TEXT[] NOT NULL DEFAULT '{}',
+  updated_at                 TIMESTAMPTZ DEFAULT now()
 );
 ```
+
+迁移须让已有 `user_settings` 行得到上述默认播放偏好，并保持现有 `lang` 值。自定义引用只在仍能从当前句库或本人现存练习记录解析到句子时有效；失效引用不计入已选数量，也不能生成播放项。清除练习记录不删除方言或其他播放偏好，但由被清除记录提供、且不在句库中的句子不再可播放。
 
 ## 5.4 权限模型（RLS）
 
@@ -57,7 +67,7 @@ CREATE TABLE user_settings (
 | 数据 | 写入时机 | 读取时机 | 生命周期 |
 |---|---|---|---|
 | 练习记录 | 每次口语评分后 | 记录页、最近练习、磨耳朵 | 长期，用户可删 |
-| 用户设置 | 修改方言后 | 各页读取（决定评估语言 + TTS 音色） | 长期 |
+| 用户设置 | 修改方言或磨耳朵播放偏好后 | 各页读取方言；磨耳朵页读取播放偏好 | 按用户长期保留 |
 | 用户资料 | 注册时 | 展示昵称 | 长期 |
 
 ## 5.6 登录与访问流程

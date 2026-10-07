@@ -6,12 +6,14 @@ import { Icon } from "./components/icons";
 import { PageShell } from "./components/page-shell";
 import { SentenceEntry } from "./components/sentence-entry";
 import { useSentenceDraft } from "./components/sentence-draft";
+import { useUserSettings } from "./components/user-settings-provider";
 import { ExplainError, fetchExplanation } from "./lib/explanation";
 import { listPracticeRecords, recentSentences } from "./lib/practice-records";
 
 export default function SelectPage() {
   const router = useRouter();
   const { sentence, setSentence, setLearning } = useSentenceDraft();
+  const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
   const [pending, setPending] = useState(false);
   const [toast, setToast] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
@@ -41,11 +43,11 @@ export default function SelectPage() {
 
   async function query() {
     const selected = sentence.trim();
-    if (!selected || pending) return;
+    if (!selected || pending || !lang) return;
     setToast("");
     setPending(true);
     try {
-      const explanation = await fetchExplanation(selected);
+      const explanation = await fetchExplanation(selected, lang);
       setLearning(selected, explanation);
       router.push("/explanation");
     } catch (cause) {
@@ -68,7 +70,9 @@ export default function SelectPage() {
             : <p className="empty-text">暂无</p>)}
         </section>}
         <div className="select-submit">
-          <button type="button" disabled={!sentence.trim() || pending} className={`primary-button${pending ? " is-loading" : ""}`} onClick={() => void query()}>
+          {dialectStatus === "loading" && <p className="supporting-copy" role="status">正在加载方言设置…</p>}
+          {dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败 <button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
+          <button type="button" disabled={!sentence.trim() || pending || !lang} className={`primary-button${pending ? " is-loading" : ""}`} onClick={() => void query()}>
             <Icon name="search" />{pending ? "查询中…" : "查询"}
           </button>
         </div>
