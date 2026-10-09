@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { alignAssessmentWords } from "../app/lib/assessment-alignment.ts";
+import { alignAssessmentWords, practiceFocus, recentPracticeFeedback, recentScorePoints } from "../app/lib/assessment-alignment.ts";
 
 const assessed = (word, accuracy = 90, errorType = "None") => ({ word, accuracy, errorType, feedback: word });
 
@@ -89,4 +89,96 @@ test("accent differences allow alignment while the displayed source stays exact"
   assert.equal(renderedSource(aligned), sentence);
   assert.equal(aligned.words[0].text, "Dónde");
   assert.equal(aligned.words[0].assessment?.accuracy, 70);
+});
+
+test("practice focus uses only a reliable source word and ignores Azure insertions", () => {
+  const focus = practiceFocus("¿Dónde está la biblioteca?", [
+    assessed("eh", 0, "Insertion"), assessed("Dónde", 95), assessed("está", 91),
+    assessed("la", 90), assessed("biblioteca", 52, "Mispronunciation"),
+  ]);
+  assert.equal(focus.reliable, true);
+  assert.equal(focus.word, "biblioteca");
+  assert.match(focus.goal, /biblioteca/u);
+});
+
+test("unreliable legacy word feedback falls back to a sentence goal", () => {
+  const fallback = practiceFocus("Buenos días.", [assessed("Buenas", 20), assessed("adiós", 95)]);
+  assert.equal(fallback.reliable, false);
+  assert.equal(fallback.word, null);
+  assert.match(fallback.goal, /整句/u);
+  const omission = practiceFocus("Hola, mundo!", [assessed("Hola"), assessed("mundo", 0, "Omission")]);
+  assert.equal(omission.word, "mundo");
+  assert.equal(omission.reliable, true);
+});
+
+test("a perfect score with no reliable weakness has no generic improvement goal", () => {
+  const words = [assessed("Hola"), assessed("mundo")];
+  const focus = practiceFocus("Hola mundo.", words, {
+    overall: 100, accuracy: 96, fluency: 94, completeness: 100, speakingRate: { wpm: 160, verdict: "适中" },
+  });
+  assert.equal(focus.goal, null);
+  assert.equal(focus.reliable, true);
+  assert.match(focus.feedback, /100/u);
+});
+
+test("a reliable weak word remains actionable even when the overall score is perfect", () => {
+  const focus = practiceFocus("Hola mundo.", [assessed("Hola"), assessed("mundo", 62, "Mispronunciation")], {
+    overall: 100, accuracy: 96, fluency: 94, completeness: 100,
+  });
+  assert.equal(focus.word, "mundo");
+  assert.match(focus.goal, /mundo/u);
+});
+
+test("aggregate score dimensions produce distinct sentence-level targets without a reliable weak word", () => {
+  const noWords = [{ word: "Buenos", accuracy: 80, errorType: "None", feedback: "" }];
+  const accuracy = practiceFocus("Hola mundo.", noWords, { overall: 86, accuracy: 72, fluency: 91, completeness: 95 });
+  const fluency = practiceFocus("Hola mundo.", noWords, { overall: 86, accuracy: 91, fluency: 74, completeness: 95 });
+  const completeness = practiceFocus("Hola mundo.", noWords, { overall: 86, accuracy: 91, fluency: 89, completeness: 78 });
+  assert.equal(accuracy.word, null);
+  assert.match(accuracy.goal, /整句发音更准确/u);
+  assert.match(fluency.goal, /自然连贯/u);
+  assert.match(completeness.goal, /读完整/u);
+  assert.notEqual(accuracy.goal, fluency.goal);
+  assert.notEqual(fluency.goal, completeness.goal);
+});
+
+test("a valid speaking-rate signal gives a sentence-level goal when score dimensions are unavailable", () => {
+  const slow = practiceFocus("Hola mundo.", null, { speakingRate: 138 });
+  const fast = practiceFocus("Hola mundo.", null, { speakingRate: 194 });
+  assert.match(slow.goal, /节奏/u);
+  assert.match(fast.goal, /放慢/u);
+  assert.notEqual(slow.goal, fast.goal);
+});
+
+test("malformed word feedback degrades to valid aggregate signals, then to an explicit data-limited goal", () => {
+  const dimensionFallback = practiceFocus("Hola mundo.", [{ word: 7 }, { word: "Hola", accuracy: "bad" }], {
+    overall: 82, fluency: 69,
+  });
+  const noDataFallback = practiceFocus("Hola mundo.", [{ word: 7 }, null]);
+  assert.match(dimensionFallback.goal, /自然连贯/u);
+  assert.equal(dimensionFallback.reliable, true);
+  assert.match(noDataFallback.feedback, /缺少/u);
+  assert.match(noDataFallback.goal, /无法定位/u);
+  assert.equal(noDataFallback.reliable, false);
+});
+
+test("recent detail feedback keeps date and score tied to the selected reliable attempt", () => {
+  const history = [
+    { id: "latest", overall: 100, accuracy: null, fluency: null, completeness: null, speaking_rate: null, raw_feedback: null },
+    { id: "usable", overall: 86, accuracy: 70, fluency: 90, completeness: 95, speaking_rate: 160, raw_feedback: null },
+  ];
+  const selected = recentPracticeFeedback("Hola mundo.", history);
+  assert.equal(selected.attempt.id, "usable");
+  assert.match(selected.focus.goal, /整句发音更准确/u);
+  assert.equal(selected.reliable, true);
+});
+
+test("score trend keeps at most five valid scores and returns chronological points", () => {
+  const history = Array.from({ length: 7 }, (_, index) => ({
+    id: String(index), created_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(), overall: index * 10,
+  })).reverse();
+  const points = recentScorePoints(history);
+  assert.deepEqual(points.map((point) => point.id), ["2", "3", "4", "5", "6"]);
+  assert.deepEqual(points.map((point) => point.score), [20, 30, 40, 50, 60]);
+  assert.deepEqual(recentScorePoints([{ id: "bad", created_at: null, overall: 120 }]), []);
 });

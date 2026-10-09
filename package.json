@@ -6,6 +6,7 @@
     "api"
   ],
   "scripts": {
+    "dev:s4test": "node web/scripts/dev-s4test.mjs",
     "dev:web": "npm run dev -w web",
     "dev:api": "npm run dev -w api",
     "typecheck": "npm run typecheck --workspaces",

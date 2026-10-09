@@ -9,26 +9,22 @@ import { PronunciationAnnotation } from "../components/pronunciation-annotation"
 import { useSentenceDraft } from "../components/sentence-draft";
 import { useUserSettings } from "../components/user-settings-provider";
 import { AssessmentError, AssessmentResult, fetchAssessment } from "../lib/assessment";
-import { alignAssessmentWords } from "../lib/assessment-alignment";
+import { alignAssessmentWords, practiceFocus } from "../lib/assessment-alignment";
 import { savePracticeRecord, type PracticeRecordDraft } from "../lib/practice-records";
 import { TtsError, fetchDemoAudio } from "../lib/tts";
 
 const rates = [0.6, 0.8, 1, 1.2] as const;
 const discardMessage = "结果未保存，确定离开吗？";
 
-function DemoPlayer({ sentence, lang }: { sentence: string; lang: "es-ES" | "es-MX" }) {
-  const [rate, setRate] = useState<number>(1);
-  const [phase, setPhase] = useState<"idle" | "loading" | "playing">("idle");
-  const [error, setError] = useState("");
-  const playback = useRef<{
-    generation: number;
-    controller: AbortController | null;
-    audio: HTMLAudioElement | null;
-    url: string | null;
-    timeout: number | null;
-  }>({ generation: 0, controller: null, audio: null, url: null, timeout: null });
+type PlaybackTarget = "sentence" | "word";
+type PlaybackState = { status: "idle" | "loading" | "playing"; target: PlaybackTarget | null; text: string; error: string };
 
-  const stopPlayback = useCallback((updateState = true) => {
+function usePracticeAudio(lang: "es-ES" | "es-MX" | null) {
+  const [state, setState] = useState<PlaybackState>({ status: "idle", target: null, text: "", error: "" });
+  const playback = useRef<{ generation: number; controller: AbortController | null; audio: HTMLAudioElement | null; url: string | null; timeout: number | null }>(
+    { generation: 0, controller: null, audio: null, url: null, timeout: null });
+
+  const stop = useCallback((updateState = true) => {
     const current = playback.current;
     current.generation += 1;
     current.controller?.abort();
@@ -45,64 +41,71 @@ function DemoPlayer({ sentence, lang }: { sentence: string; lang: "es-ES" | "es-
     current.audio = null;
     if (current.url) URL.revokeObjectURL(current.url);
     current.url = null;
-    if (updateState) setPhase("idle");
+    if (updateState) setState({ status: "idle", target: null, text: "", error: "" });
   }, []);
 
-  useEffect(() => () => stopPlayback(false), [stopPlayback]);
+  useEffect(() => () => stop(false), [stop]);
 
-  async function startPlayback(nextRate: number) {
-    stopPlayback(false);
-    const generation = playback.current.generation;
+  const play = useCallback(async (text: string, rate: number, target: PlaybackTarget) => {
+    if (!lang || !text.trim()) return;
+    stop(false);
+    const current = playback.current;
+    const generation = current.generation;
     const controller = new AbortController();
-    playback.current.controller = controller;
-    playback.current.timeout = window.setTimeout(() => controller.abort(), 15_000);
-    setRate(nextRate);
-    setError("");
-    setPhase("loading");
-
+    current.controller = controller;
+    current.timeout = window.setTimeout(() => controller.abort(), 15_000);
+    setState({ status: "loading", target, text, error: "" });
     try {
-      const blob = await fetchDemoAudio(sentence, nextRate, controller.signal, lang);
+      const blob = await fetchDemoAudio(text, rate, controller.signal, lang);
       if (generation !== playback.current.generation) return;
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      playback.current.url = url;
-      playback.current.audio = audio;
-      audio.onended = () => {
-        if (generation === playback.current.generation) stopPlayback();
-      };
+      current.url = url;
+      current.audio = audio;
+      audio.onended = () => { if (generation === playback.current.generation) stop(); };
       audio.onerror = () => {
-        if (generation === playback.current.generation) {
-          stopPlayback();
-          setError("示范音频无法播放，请重试");
-        }
+        if (generation !== playback.current.generation) return;
+        stop();
+        setState({ status: "idle", target, text, error: "示范音频无法播放，请重试" });
       };
       await audio.play();
-      if (generation === playback.current.generation) setPhase("playing");
+      if (generation === playback.current.generation) setState({ status: "playing", target, text, error: "" });
     } catch (cause) {
       if (generation !== playback.current.generation) return;
-      stopPlayback();
-      setError(cause instanceof TtsError ? cause.message : "示范音频无法播放，请重试");
+      stop();
+      setState({ status: "idle", target, text, error: cause instanceof TtsError ? cause.message : "示范音频无法播放，请重试" });
     } finally {
-      if (generation === playback.current.generation && playback.current.timeout !== null) {
-        window.clearTimeout(playback.current.timeout);
-        playback.current.timeout = null;
+      if (generation === playback.current.generation && current.timeout !== null) {
+        window.clearTimeout(current.timeout);
+        current.timeout = null;
       }
     }
-  }
+  }, [lang, stop]);
 
+  return { ...state, play, stop: () => stop() };
+}
+
+function DemoPlayer({ sentence, audio, rate, setRate }: {
+  sentence: string;
+  audio: ReturnType<typeof usePracticeAudio>;
+  rate: number;
+  setRate: (value: number) => void;
+}) {
+  const active = audio.target === "sentence" && audio.status !== "idle";
   return (
     <section className="section-block">
       <SectionHeading>听示范</SectionHeading>
-      <button type="button" className="secondary-button" onClick={() => phase === "idle" ? void startPlayback(rate) : stopPlayback()}>
-        <Icon name={phase === "idle" ? "volume" : "stop"} />{phase === "idle" ? "听示范" : "停止"}
+      <button type="button" className="secondary-button" onClick={() => active ? audio.stop() : void audio.play(sentence, rate, "sentence")}>
+        <Icon name={active ? "stop" : "volume"} />{active ? "停止" : "听示范"}
       </button>
-      {phase === "loading" && <p className="tts-feedback" role="status">正在生成示范音频…</p>}
+      {audio.status === "loading" && audio.target === "sentence" && <p className="tts-feedback" role="status">正在生成示范音频…</p>}
       <div className="speed-row" aria-label="朗读语速">
         {rates.map((choice) => (
-          <button key={choice} type="button" aria-pressed={rate === choice} className={rate === choice ? "speed-choice selected" : "speed-choice"} onClick={() => void startPlayback(choice)}>{choice.toFixed(1)}×</button>
+          <button key={choice} type="button" aria-pressed={rate === choice} className={rate === choice ? "speed-choice selected" : "speed-choice"}
+            onClick={() => { setRate(choice); void audio.play(sentence, choice, "sentence"); }}>{choice.toFixed(1)}×</button>
         ))}
       </div>
-      {error && <p className="tts-feedback tts-error" role="alert">{error} <button type="button" onClick={() => void startPlayback(rate)}>重试</button></p>}
+      {audio.error && audio.target === "sentence" && <p className="tts-feedback tts-error" role="alert">{audio.error} <button type="button" onClick={() => void audio.play(sentence, rate, "sentence")}>重试</button></p>}
     </section>
   );
 }
@@ -114,6 +117,8 @@ export default function PracticePage() {
   const practiceSentence = repeatPractice?.sentence ?? explainedSentence;
   const practiceTranslation = repeatPractice?.translation ?? explanation?.translation;
   const canPractice = Boolean(practiceSentence && practiceTranslation);
+  const [audioRate, setAudioRate] = useState<number>(1);
+  const audio = usePracticeAudio(lang);
   const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "assessing">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [toast, setToast] = useState("");
@@ -121,11 +126,18 @@ export default function PracticePage() {
   const [saveDraft, setSaveDraft] = useState<PracticeRecordDraft | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [selectedWord, setSelectedWord] = useState<{ kind: "reference" | "insertion"; index: number } | null>(null);
-  const [demoVersion, setDemoVersion] = useState(0);
+  const [practiceGoal, setPracticeGoal] = useState<string | null>(repeatPractice?.focus ?? null);
   const recording = useRef<{ recorder: MediaRecorder; stream: MediaStream; started: number; chunks: Blob[] } | null>(null);
   const request = useRef<AbortController | null>(null);
   const timer = useRef<number | null>(null);
   const generation = useRef(0);
+  const resultFocus = result ? practiceFocus(practiceSentence, result.words, {
+    overall: result.overall,
+    accuracy: result.accuracy,
+    fluency: result.fluency,
+    completeness: result.completeness,
+    speakingRate: result.speakingRate,
+  }) : null;
 
   useEffect(() => {
     if (!saveDraft || saveStatus !== "saving") return;
@@ -176,6 +188,7 @@ export default function PracticePage() {
 
   async function startRecording() {
     if (!practiceTranslation || !canPractice || !lang || !confirmDiscard()) return;
+    audio.stop();
     const translation = practiceTranslation;
     const assessmentSentence = practiceSentence;
     const currentGeneration = ++generation.current;
@@ -185,7 +198,6 @@ export default function PracticePage() {
     setSaveDraft(null);
     setSaveStatus("idle");
     setSelectedWord(null);
-    setDemoVersion((version) => version + 1);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setToast("当前浏览器不支持录音，请换用支持录音的浏览器");
       setPhase("idle");
@@ -252,6 +264,9 @@ export default function PracticePage() {
           .then((assessment) => {
             if (currentGeneration === generation.current) {
               setResult(assessment);
+              setPracticeGoal(practiceFocus(assessmentSentence, assessment.words,
+                { overall: assessment.overall, accuracy: assessment.accuracy, fluency: assessment.fluency,
+                  completeness: assessment.completeness, speakingRate: assessment.speakingRate }).goal);
               setSaveDraft({ id: crypto.randomUUID(), sentence: assessmentSentence, translation, result: assessment });
               setSaveStatus("saving");
             }
@@ -317,6 +332,7 @@ export default function PracticePage() {
             <>
               <p className="learning-sentence" lang="es">{practiceSentence}</p>
               {repeatPractice ? <p className="translation-text">{repeatPractice.translation}</p> : explanation && <PronunciationAnnotation annotation={explanation.annotation} />}
+              {practiceGoal && !result && <p className="practice-goal" role="status"><strong>本次练习目标：</strong>{practiceGoal}</p>}
             </>
           ) : (
             <><EmptyText>选定句子后，就可以听示范并练习朗读。</EmptyText><Link href="/" className="inline-link">去选句</Link></>
@@ -324,9 +340,9 @@ export default function PracticePage() {
         </section>
         {canPractice && dialectStatus === "loading" && <p className="supporting-copy" role="status">正在加载方言设置…</p>}
         {canPractice && dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败 <button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
-        {canPractice && lang && <DemoPlayer key={`${practiceSentence}:${lang}:${demoVersion}`} sentence={practiceSentence} lang={lang} />}
+        {canPractice && lang && <DemoPlayer key={`${practiceSentence}:${lang}`} sentence={practiceSentence} audio={audio} rate={audioRate} setRate={setAudioRate} />}
         {phase === "assessing" && <p className="assessment-status" role="status">正在评估朗读…</p>}
-        {result && <section className="section-block assessment-result" aria-label="评分结果">
+        {result && <section className={`section-block assessment-result${result.overall === 100 ? " assessment-perfect" : ""}`} aria-label="评分结果">
           <SectionHeading>评分结果</SectionHeading>
           {saveStatus === "saving" && <p className="record-save-status" role="status">保存中…</p>}
           {saveStatus === "saved" && <p className="record-save-status" role="status">已保存到练习记录</p>}
@@ -368,8 +384,17 @@ export default function PracticePage() {
             {aligned && (aligned.unalignedCount > 0 || aligned.words.some((word) => !word.assessment))
               && <p className="assessment-word-feedback">部分词未能可靠对齐，未在原句上标出词级分数</p>}
             {selectedAssessment && <p className="assessment-word-feedback">{selectedLabel} · {Math.round(selectedAssessment.accuracy)}分：{selectedAssessment.feedback}</p>}
+            {selectedWord?.kind === "reference" && selectedAssessment && <div className="word-audio-control">
+              <button type="button" className="plain-button" onClick={() => audio.target === "word" && audio.text === selectedLabel && audio.status !== "idle"
+                ? audio.stop() : void audio.play(selectedLabel ?? "", audioRate, "word")}>
+                <Icon name={audio.target === "word" && audio.text === selectedLabel && audio.status !== "idle" ? "stop" : "volume"} />
+                {audio.target === "word" && audio.text === selectedLabel && audio.status !== "idle" ? "停止词音" : `听「${selectedLabel}」`}
+              </button>
+              {audio.status === "loading" && audio.target === "word" && audio.text === selectedLabel && <p className="tts-feedback" role="status">正在生成词音…</p>}
+              {audio.error && audio.target === "word" && audio.text === selectedLabel && <p className="tts-feedback tts-error" role="alert">{audio.error} <button type="button" onClick={() => void audio.play(selectedLabel ?? "", audioRate, "word")}>重试</button></p>}
+            </div>}
           </div>
-          <div className="assessment-suggestions"><h3>提升方向</h3><ul>{result.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}</ul></div>
+          {resultFocus?.goal && <div className="assessment-suggestions"><h3>提升方向</h3><p>{resultFocus.goal}</p></div>}
           <div className="result-actions"><button type="button" className="secondary-button" onClick={() => void startRecording()}>再读一次</button><button type="button" className="plain-button" onClick={changeSentence}>换一句</button></div>
         </section>}
       </div>

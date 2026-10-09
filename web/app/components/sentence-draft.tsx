@@ -10,11 +10,11 @@ const SentenceDraftContext = createContext<{
   explanation: Explanation | null;
   learningOrigin: "select" | "records";
   recordReturnId: string | null;
-  repeatPractice: { sentence: string; translation: string } | null;
+  repeatPractice: { sentence: string; translation: string; focus: string | null } | null;
   setLearning: (sentence: string, explanation: Explanation) => void;
   setRequestedExplanation: (explanation: Explanation) => void;
   prepareRecordExplanation: (sentence: string, recordId: string) => void;
-  prepareRecordPractice: (sentence: string, translation: string, recordId: string) => void;
+  prepareRecordPractice: (sentence: string, translation: string, recordId: string, focus: string | null) => void;
   clearLearning: () => void;
 } | null>(null);
 
@@ -24,7 +24,7 @@ export function SentenceDraftProvider({ children }: { children: ReactNode }) {
   const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [learningOrigin, setLearningOrigin] = useState<"select" | "records">("select");
   const [recordReturnId, setRecordReturnId] = useState<string | null>(null);
-  const [repeatPractice, setRepeatPractice] = useState<{ sentence: string; translation: string } | null>(null);
+  const [repeatPractice, setRepeatPractice] = useState<{ sentence: string; translation: string; focus: string | null } | null>(null);
 
   function setLearning(nextSentence: string, nextExplanation: Explanation) {
     setExplainedSentence(nextSentence);
@@ -43,13 +43,13 @@ export function SentenceDraftProvider({ children }: { children: ReactNode }) {
     setRepeatPractice(null);
   }
 
-  function prepareRecordPractice(nextSentence: string, translation: string, recordId: string) {
+  function prepareRecordPractice(nextSentence: string, translation: string, recordId: string, focus: string | null) {
     setSentence(nextSentence);
     setExplainedSentence(nextSentence);
     setExplanation(null);
     setLearningOrigin("records");
     setRecordReturnId(recordId);
-    setRepeatPractice({ sentence: nextSentence, translation });
+    setRepeatPractice({ sentence: nextSentence, translation, focus });
   }
 
   const setRequestedExplanation = useCallback((nextExplanation: Explanation) => {

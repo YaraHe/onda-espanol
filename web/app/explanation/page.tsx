@@ -20,8 +20,32 @@ export default function ExplanationPage() {
   const [queryState, setQueryState] = useState<"loading" | "error">("loading");
   const [queryError, setQueryError] = useState("");
   const [collection, setCollection] = useState<{ userId: string; sentence: string; explanation: NonNullable<typeof explanation>; status: "saving" | "saved" | "error" } | null>(null);
+  const [collectionToast, setCollectionToast] = useState<{ id: number; message: string } | null>(null);
   const collectionRequest = useRef<{ userId: string; sentence: string; explanation: NonNullable<typeof explanation> } | null>(null);
   const collectionAttempt = useRef(0);
+  const collectionToastId = useRef(0);
+  const collectionToastTimer = useRef<number | null>(null);
+
+  function showCollectionToast(status: "saving" | "saved" | "error") {
+    const messages = {
+      saving: "正在收录到我的句子…",
+      saved: "句子已收录到我的句子",
+      error: "收录失败，句子尚未保存",
+    } as const;
+    if (collectionToastTimer.current !== null) window.clearTimeout(collectionToastTimer.current);
+    const id = ++collectionToastId.current;
+    setCollectionToast({ id, message: messages[status] });
+    collectionToastTimer.current = window.setTimeout(() => {
+      setCollectionToast((current) => current?.id === id ? null : current);
+      collectionToastTimer.current = null;
+    }, 2800);
+  }
+
+  function dismissCollectionToast() {
+    if (collectionToastTimer.current !== null) window.clearTimeout(collectionToastTimer.current);
+    collectionToastTimer.current = null;
+    setCollectionToast(null);
+  }
 
   useEffect(() => {
     if (learningOrigin === "select" || !explainedSentence || explanation || !lang) return;
@@ -38,16 +62,31 @@ export default function ExplanationPage() {
   }, [explainedSentence, explanation, lang, learningOrigin, retry, setRequestedExplanation]);
 
   useEffect(() => {
+    return () => {
+      if (collectionToastTimer.current !== null) window.clearTimeout(collectionToastTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!userId || !explainedSentence || !explanation) return;
     const previous = collectionRequest.current;
     if (previous?.userId === userId && previous.sentence === explainedSentence && previous.explanation === explanation) return;
     collectionRequest.current = { userId, sentence: explainedSentence, explanation };
     const attempt = ++collectionAttempt.current;
-    queueMicrotask(() => setCollection({ userId, sentence: explainedSentence, explanation, status: "saving" }));
+    queueMicrotask(() => {
+      setCollection({ userId, sentence: explainedSentence, explanation, status: "saving" });
+      showCollectionToast("saving");
+    });
     void savePersonalSentence({ sentence: explainedSentence, translation: explanation.translation }, userId).then(() => {
-      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "saved" });
+      if (attempt === collectionAttempt.current) {
+        setCollection({ userId, sentence: explainedSentence, explanation, status: "saved" });
+        showCollectionToast("saved");
+      }
     }).catch(() => {
-      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "error" });
+      if (attempt === collectionAttempt.current) {
+        setCollection({ userId, sentence: explainedSentence, explanation, status: "error" });
+        showCollectionToast("error");
+      }
     });
   }, [userId, explainedSentence, explanation]);
 
@@ -55,15 +94,23 @@ export default function ExplanationPage() {
     if (!userId || !explainedSentence || !explanation) return;
     const attempt = ++collectionAttempt.current;
     setCollection({ userId, sentence: explainedSentence, explanation, status: "saving" });
+    showCollectionToast("saving");
     void savePersonalSentence({ sentence: explainedSentence, translation: explanation.translation }, userId).then(() => {
-      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "saved" });
+      if (attempt === collectionAttempt.current) {
+        setCollection({ userId, sentence: explainedSentence, explanation, status: "saved" });
+        showCollectionToast("saved");
+      }
     }).catch(() => {
-      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "error" });
+      if (attempt === collectionAttempt.current) {
+        setCollection({ userId, sentence: explainedSentence, explanation, status: "error" });
+        showCollectionToast("error");
+      }
     });
   }
 
-  const collectionStatus = collection?.userId === userId && collection.sentence === explainedSentence && collection.explanation === explanation
-    ? collection.status : "saving";
+  const collectionStatus = !userId || !explainedSentence || !explanation ? null
+    : collection?.userId === userId && collection.sentence === explainedSentence && collection.explanation === explanation
+      ? collection.status : "saving";
 
   function changeSentence() {
     clearLearning();
@@ -99,9 +146,7 @@ export default function ExplanationPage() {
             <SectionHeading>原句</SectionHeading>
             <p className="learning-sentence" lang="es">{explainedSentence}</p>
             <PronunciationAnnotation annotation={explanation.annotation} />
-            {collectionStatus === "saving" && <p className="supporting-copy" role="status">正在收录到我的句子…</p>}
-            {collectionStatus === "saved" && <p className="supporting-copy" role="status">已收录到我的句子</p>}
-            {collectionStatus === "error" && <p className="form-error" role="alert">讲解已生成，但句子尚未收录。<button type="button" className="inline-retry" onClick={retryCollection}>只重试收录</button></p>}
+            {collectionStatus === "error" && <p className="collection-retry-state">句子尚未收录。<button type="button" className="inline-retry" onClick={retryCollection}>重试收录</button></p>}
           </section>
 
           <section className="section-block understanding-surface">
@@ -140,6 +185,12 @@ export default function ExplanationPage() {
           <button type="button" className="plain-button" onClick={changeSentence}>换一句</button>
         </div>
       )}
+      <div className="collection-toast-region" aria-live="polite" aria-atomic="true">
+        {collectionToast && <div className="query-toast collection-toast" key={collectionToast.id}>
+          <span>{collectionToast.message}</span>
+          <button type="button" onClick={dismissCollectionToast} aria-label="关闭收录提示">关闭</button>
+        </div>}
+      </div>
     </PageShell>
   );
 }

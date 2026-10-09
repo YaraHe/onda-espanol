@@ -123,3 +123,155 @@ export function alignAssessmentWords(sentence: string, assessed: AssessedWord[])
   }
   return { words, insertions, unalignedCount, suffix };
 }
+
+export type PracticeFocus = {
+  feedback: string;
+  goal: string | null;
+  word: string | null;
+  reliable: boolean;
+};
+
+export type PracticeSignals = {
+  overall?: unknown;
+  accuracy?: unknown;
+  fluency?: unknown;
+  completeness?: unknown;
+  speakingRate?: unknown;
+};
+
+function validScore(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function scoreValue(value: unknown): number | null {
+  return validScore(value) ? value : null;
+}
+
+/** Returns only feedback that can be tied to an unambiguous source word. */
+export function practiceFocus(sentence: string, rawFeedback: unknown,
+  signals: PracticeSignals = {}): PracticeFocus {
+  const words = Array.isArray(rawFeedback) ? rawFeedback.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as Record<string, unknown>;
+    if (typeof item.word !== "string" || !item.word.trim()
+      || typeof item.accuracy !== "number" || !Number.isFinite(item.accuracy) || item.accuracy < 0 || item.accuracy > 100
+      || typeof item.errorType !== "string" || typeof item.feedback !== "string") return [];
+    return [{ word: item.word, accuracy: item.accuracy, errorType: item.errorType, feedback: item.feedback }];
+  }) : [];
+  const aligned = alignAssessmentWords(sentence, words);
+  const reliable = aligned.words.flatMap((word) => word.assessment ? [{
+    word: word.text,
+    accuracy: word.assessment.accuracy,
+    errorType: word.assessment.errorType,
+    feedback: word.assessment.feedback.trim().slice(0, 180),
+  }] : []);
+  const weak = reliable.filter((word) => word.accuracy < 80 || word.errorType !== "None")
+    .sort((a, b) => a.accuracy - b.accuracy)[0];
+  if (weak) return {
+    feedback: `「${weak.word}」${weak.accuracy}分：${weak.feedback || "需要再练习"}`,
+    goal: `多听示范，再练「${weak.word}」`,
+    word: weak.word,
+    reliable: true,
+  };
+
+  const completeness = scoreValue(signals.completeness);
+  if (completeness !== null && completeness < 85) return {
+    feedback: `完整度 ${Math.round(completeness)}分：这次练习可能有词未读出。`,
+    goal: "对照原句，把整句读完整",
+    word: null,
+    reliable: true,
+  };
+
+  const accuracy = scoreValue(signals.accuracy);
+  if (accuracy !== null && accuracy < 80) return {
+    feedback: `准确度 ${Math.round(accuracy)}分：目前没有可靠的词级位置可指出。`,
+    goal: "跟随整句示范，练习让整句发音更准确",
+    word: null,
+    reliable: true,
+  };
+
+  const fluency = scoreValue(signals.fluency);
+  if (fluency !== null && fluency < 80) return {
+    feedback: `流利度 ${Math.round(fluency)}分：可以从整句节奏继续练习。`,
+    goal: "跟随整句示范，练习读得自然连贯",
+    word: null,
+    reliable: true,
+  };
+
+  const speakingRate = typeof signals.speakingRate === "object" && signals.speakingRate !== null
+    ? (signals.speakingRate as { verdict?: unknown; wpm?: unknown }).verdict
+      ?? (signals.speakingRate as { wpm?: unknown }).wpm
+    : signals.speakingRate;
+  const rateVerdict = speakingRate === "偏慢" || (typeof speakingRate === "number" && Number.isFinite(speakingRate) && speakingRate < 150)
+    ? "slow"
+    : speakingRate === "偏快" || (typeof speakingRate === "number" && Number.isFinite(speakingRate) && speakingRate > 180)
+      ? "fast" : null;
+  if (rateVerdict === "slow") return {
+    feedback: "语速偏慢：参考范围约为每分钟 150–180 词，仅作节奏参考。",
+    goal: "跟随整句示范，练习自然连贯的节奏",
+    word: null,
+    reliable: true,
+  };
+  if (rateVerdict === "fast") return {
+    feedback: "语速偏快：参考范围约为每分钟 150–180 词，仅作节奏参考。",
+    goal: "稍放慢语速，读清整句中的每个词",
+    word: null,
+    reliable: true,
+  };
+
+  const overall = scoreValue(signals.overall);
+  const hasUsableWordFeedback = reliable.length > 0;
+  const hasUsableDimensions = accuracy !== null || fluency !== null || completeness !== null;
+  if (overall === 100) return {
+    feedback: "总分 100；本次评分没有识别出需要单独指出的薄弱项。",
+    goal: null,
+    word: null,
+    reliable: hasUsableWordFeedback || hasUsableDimensions,
+  };
+  return {
+    feedback: hasUsableWordFeedback || hasUsableDimensions
+      ? "本次评分没有定位到明确的薄弱项。"
+      : "这条记录缺少可可靠定位薄弱项的反馈数据。",
+    goal: hasUsableWordFeedback || hasUsableDimensions
+      ? null
+      : "目前无法定位具体薄弱点，可先对照整句示范练习",
+    word: null,
+    reliable: hasUsableWordFeedback || hasUsableDimensions,
+  };
+}
+
+export type PracticeHistoryFeedbackInput = {
+  raw_feedback: unknown;
+  overall: unknown;
+  accuracy: unknown;
+  fluency: unknown;
+  completeness: unknown;
+  speaking_rate: unknown;
+};
+
+/** Selects the newest attempt with usable feedback; if none qualify, keeps the newest attempt for honest degradation. */
+export function recentPracticeFeedback<T extends PracticeHistoryFeedbackInput>(sentence: string, history: T[]) {
+  if (!history.length) return null;
+  const toFocus = (attempt: T) => practiceFocus(sentence, attempt.raw_feedback, {
+    overall: attempt.overall,
+    accuracy: attempt.accuracy,
+    fluency: attempt.fluency,
+    completeness: attempt.completeness,
+    speakingRate: attempt.speaking_rate,
+  });
+  const reliableAttempt = history.find((attempt) => toFocus(attempt).reliable);
+  const attempt = reliableAttempt ?? history[0];
+  return { attempt, focus: toFocus(attempt), reliable: reliableAttempt !== undefined };
+}
+
+export type ScorePoint = { id: string; created_at: string | null; overall: number | null };
+
+/** Keeps the five newest valid overall scores, returned oldest-to-newest for plotting. */
+export function recentScorePoints(history: ScorePoint[]): (ScorePoint & { score: number })[] {
+  return history.filter((item): item is ScorePoint & { overall: number } =>
+    typeof item.overall === "number" && Number.isFinite(item.overall) && item.overall >= 0 && item.overall <= 100)
+    .filter((item) => item.created_at === null || Number.isFinite(Date.parse(item.created_at)))
+    .slice(0, 5)
+    .map((item) => ({ ...item, score: item.overall }))
+    .reverse();
+}

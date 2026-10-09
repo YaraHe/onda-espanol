@@ -98,6 +98,39 @@ test("assess rejects invalid and short audio before Azure", async (t) => {
   assert.equal(called, 0);
 });
 
+test("assess does not recommend an Azure insertion as a source sentence word", async (t) => {
+  const withInsertion = structuredClone(azureAssessment);
+  withInsertion.NBest[0].Words.splice(1, 0, {
+    Word: "eh", Offset: 5_000_000, Duration: 1_000_000, AccuracyScore: 0, ErrorType: "Insertion",
+  });
+  const server = createServer({
+    azureSpeechKey: "test-key", azureSpeechRegion: "eastus",
+    assessTranscode: async () => wavSeconds(3),
+    assessFetch: async () => new Response(JSON.stringify(withInsertion), { status: 200 }),
+  });
+  t.after(() => server.close());
+  const response = await server.inject({ method: "POST", url: "/api/assess", ...await multipart() });
+  assert.equal(response.statusCode, 200);
+  assert.doesNotMatch(response.json().suggestions.join(" "), /「eh」/u);
+  assert.match(response.json().suggestions.join(" "), /biblioteca/u);
+});
+
+test("assess does not recommend a misrecognized word absent from the reference sentence", async (t) => {
+  const mismatched = structuredClone(azureAssessment);
+  mismatched.NBest[0].Words[3] = {
+    ...mismatched.NBest[0].Words[3], Word: "inventada", AccuracyScore: 0, ErrorType: "Mispronunciation",
+  };
+  const server = createServer({
+    azureSpeechKey: "test-key", azureSpeechRegion: "eastus",
+    assessTranscode: async () => wavSeconds(2),
+    assessFetch: async () => new Response(JSON.stringify(mismatched), { status: 200 }),
+  });
+  t.after(() => server.close());
+  const response = await server.inject({ method: "POST", url: "/api/assess", ...await multipart() });
+  assert.equal(response.statusCode, 200);
+  assert.doesNotMatch(response.json().suggestions.join(" "), /「inventada」/u);
+});
+
 test("assess rejects no-match audio and incomplete Azure scores", async (t) => {
   let upstream = { RecognitionStatus: "NoMatch" };
   const server = createServer({

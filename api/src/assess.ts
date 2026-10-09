@@ -52,7 +52,12 @@ function wordFeedback(errorType: string, accuracy: number): string {
   return "发音较准确";
 }
 
-function adaptAssessment(value: unknown): Assessment | null {
+function comparableWord(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("es")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function adaptAssessment(value: unknown, sentence: string): Assessment | null {
   const result = object(value);
   const best = Array.isArray(result?.NBest) ? object(result.NBest[0]) : null;
   if (result?.RecognitionStatus !== "Success" || !best || !score(best.PronScore)
@@ -87,8 +92,25 @@ function adaptAssessment(value: unknown): Assessment | null {
   const suggestions: string[] = [];
   if (best.CompletenessScore < 60) suggestions.push("与原文不符，请对照原句读完整句");
   else if (best.CompletenessScore < 85) suggestions.push("尽量读完整句，避免漏词");
-  const weakest = words.reduce((left, right) => right.accuracy < left.accuracy ? right : left);
-  if (weakest.accuracy < 80) suggestions.push(`「${weakest.word}」准确度较低，可多听示范后重读`);
+  const referenceCounts = new Map<string, number>();
+  for (const token of sentence.match(/[\p{L}\p{M}\p{N}]+(?:['’\-][\p{L}\p{M}\p{N}]+)*/gu) ?? []) {
+    const key = comparableWord(token);
+    referenceCounts.set(key, (referenceCounts.get(key) ?? 0) + 1);
+  }
+  const assessedCounts = new Map<string, number>();
+  for (const word of words) {
+    if (word.errorType === "Insertion") continue;
+    const key = comparableWord(word.word);
+    assessedCounts.set(key, (assessedCounts.get(key) ?? 0) + 1);
+  }
+  const sourceWords = words.filter((word) => {
+    if (word.errorType === "Insertion") return false;
+    const key = comparableWord(word.word);
+    return referenceCounts.get(key) !== undefined && referenceCounts.get(key) === assessedCounts.get(key);
+  });
+  const weakest = sourceWords.reduce<AssessedWord | null>((left, right) =>
+    !left || right.accuracy < left.accuracy ? right : left, null);
+  if (weakest && weakest.accuracy < 80) suggestions.push(`「${weakest.word}」准确度较低，可多听示范后重读`);
   if (verdict === "偏慢") suggestions.push("语速可稍快，保持自然连贯");
   if (verdict === "偏快") suggestions.push("语速可稍慢，注意每个词的清晰度");
   if (!suggestions.length) suggestions.push("保持当前节奏，继续参照示范练习");
@@ -175,7 +197,7 @@ export function createAssessHandler({
         && best.Words.every((word: unknown) => object(word)?.ErrorType === "Omission")) {
         return error(reply, 400, "INVALID_AUDIO", "未识别到清晰朗读，请重录");
       }
-      const result = adaptAssessment(raw);
+      const result = adaptAssessment(raw, sentence);
       if (!result) return error(reply, 502, "UPSTREAM_ERROR", "评估结果不完整，请重试");
       return reply.header("Cache-Control", "no-store").send(result);
     } catch {

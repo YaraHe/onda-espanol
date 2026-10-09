@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../components/auth-provider";
 import { EmptyText, PageShell, SectionHeading } from "../components/page-shell";
 import { useUserSettings } from "../components/user-settings-provider";
@@ -22,6 +23,7 @@ const scopes: { value: ListeningScope; label: string }[] = [
 ];
 
 export default function ListeningPage() {
+  const router = useRouter();
   const { userId } = useAuth();
   const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
   const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -29,6 +31,8 @@ export default function ListeningPage() {
   const [sentences, setSentences] = useState<PersonalSentence[]>([]);
   const [preferences, setPreferences] = useState<ListeningPreferences>({ ...defaultListeningPreferences, customSelection: [] });
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [confirmManageNavigation, setConfirmManageNavigation] = useState(false);
+  const manageDialogRef = useRef<HTMLDialogElement>(null);
   const preferencesRef = useRef(preferences);
   const loadGeneration = useRef(0);
   const currentUser = useRef(userId);
@@ -44,6 +48,12 @@ export default function ListeningPage() {
   const player = useListeningPlayer(playlist, preferences.rate, preferences.intervalSeconds, lang);
 
   useEffect(() => { preferencesRef.current = preferences; }, [preferences]);
+  useEffect(() => {
+    const dialog = manageDialogRef.current;
+    if (!dialog) return;
+    if (confirmManageNavigation && !dialog.open) dialog.showModal();
+    else if (!confirmManageNavigation && dialog.open) dialog.close();
+  }, [confirmManageNavigation]);
   useEffect(() => { currentUser.current = userId; saveQueue.current = { userId, pending: null, running: false }; }, [userId]);
   useEffect(() => {
     mounted.current = true;
@@ -125,10 +135,24 @@ export default function ListeningPage() {
     else player.startLoop();
   }
 
+  function openMySentences() {
+    if (["loading", "playing", "gap", "paused"].includes(player.phase)) {
+      setConfirmManageNavigation(true);
+      return;
+    }
+    router.push("/my-sentences");
+  }
+
+  function leaveForMySentences() {
+    setConfirmManageNavigation(false);
+    player.stop();
+    router.push("/my-sentences");
+  }
+
   return (
     <PageShell title="听熟" primary="listening" action={
       <button type="button" className={`primary-button${player.phase === "loading" ? " is-loading" : ""}`} disabled={!canPlay && !busy} onClick={primaryAction}>
-        {busy ? "暂停" : "开始播放"}
+        {busy ? "暂停" : player.phase === "paused" ? "继续" : "开始播放"}
       </button>
     }>
       <div className="page-stack listening-page">
@@ -147,7 +171,10 @@ export default function ListeningPage() {
           {dialectStatus === "loading" && <p className="supporting-copy" role="status">正在加载方言设置…</p>}
           {dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败。<button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
           <section className="section-block">
-            <SectionHeading>朗读范围</SectionHeading>
+            <div className="listening-section-heading">
+              <SectionHeading>朗读范围</SectionHeading>
+              <button type="button" className="my-sentences-link" onClick={openMySentences}>我的句子</button>
+            </div>
             <div className="option-row" role="group" aria-label="朗读范围">
               {scopes.map((choice) => <button key={choice.value} type="button" aria-pressed={preferences.scope === choice.value} className={`option-choice${preferences.scope === choice.value ? " selected" : ""}`} onClick={() => changeScope(choice.value)}>{choice.label}</button>)}
             </div>
@@ -197,6 +224,14 @@ export default function ListeningPage() {
           </section>
         </>}
       </div>
+      <dialog ref={manageDialogRef} className="listening-leave-dialog" aria-labelledby="leave-listening-title" onCancel={(event) => { event.preventDefault(); setConfirmManageNavigation(false); }}>
+        <h2 id="leave-listening-title">离开听熟？</h2>
+        <p>离开后本次播放会停止。返回后可以重新开始，但不会接续当前播放位置。</p>
+        <div className="listening-leave-actions">
+          <button type="button" className="secondary-button" onClick={() => setConfirmManageNavigation(false)}>继续听</button>
+          <button type="button" className="primary-button" onClick={leaveForMySentences}>停止并查看</button>
+        </div>
+      </dialog>
     </PageShell>
   );
 }

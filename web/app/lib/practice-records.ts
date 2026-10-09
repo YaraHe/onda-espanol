@@ -22,6 +22,7 @@ export type PracticeRecordAttempt = PracticeRecordSummary & {
   fluency: number | null;
   completeness: number | null;
   speaking_rate: number | null;
+  raw_feedback: unknown;
 };
 
 export type PracticeRecordDetail = {
@@ -98,7 +99,7 @@ export async function getPracticeRecordDetail(recordId: string): Promise<Practic
   const pageSize = 100;
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await client.from("practice_records")
-      .select("id,sentence,translation,overall,accuracy,fluency,completeness,speaking_rate,created_at")
+      .select("id,sentence,translation,overall,accuracy,fluency,completeness,speaking_rate,raw_feedback,created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })

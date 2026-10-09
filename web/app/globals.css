@@ -159,16 +159,9 @@ a { color: inherit; text-decoration: none; }
   font-size: 14px;
 }
 .query-toast button { flex: none; border: 0; background: transparent; color: var(--blue); text-decoration: underline; }
+.collection-retry-state { margin: 8px 0 0; color: var(--ink-soft); font-size: 13px; }
 .inline-retry { min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--blue); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .recent-practices { gap: 8px; }
-.personal-sentences { gap: 8px; }
-.personal-sentence-list { margin: 0; padding: 0; list-style: none; }
-.personal-sentence-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-top: 1px solid var(--rule); }
-.personal-recall { flex: 1; min-width: 0; min-height: 58px; padding: 10px 0; border: 0; background: transparent; color: var(--blue); font-family: var(--spanish-serif); font-size: 17px; text-align: left; overflow-wrap: anywhere; }
-.personal-remove { flex: none; min-height: 44px; padding: 5px 0 5px 10px; border: 0; background: transparent; color: var(--ink-muted); font-size: 13px; }
-.personal-remove:disabled { opacity: .65; }
-.personal-remove-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; width: 100%; padding: 0 0 12px; }
-.personal-remove-confirm p { flex-basis: 100%; margin: 0; color: var(--ink-soft); font-size: 13px; }
 .recent-practice-list, .record-list { margin: 0; padding: 0; list-style: none; }
 .recent-practice-list li + li, .record-list li + li { border-top: 1px solid var(--rule); }
 .recent-practice-list button { width: 100%; min-height: 48px; padding: 10px 0; border: 0; background: transparent; color: var(--blue); font-family: var(--spanish-serif); font-size: 17px; text-align: left; overflow-wrap: anywhere; }
@@ -211,6 +204,8 @@ a { color: inherit; text-decoration: none; }
 .toggle-row + .toggle-row { border-top: 1px solid var(--rule); }
 .toggle-row input { accent-color: var(--blue); width: 19px; height: 19px; }
 .listening-page { gap: 30px; }
+.listening-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.my-sentences-link { flex: none; min-height: 44px; padding: 0 2px; border: 0; background: transparent; color: var(--blue); font-size: 13px; text-decoration: underline; text-underline-offset: 4px; }
 .listening-now { display: grid; gap: 5px; padding: 18px 0 16px; border-bottom: 1px solid var(--rule); }
 .listening-now p { margin: 0; }
 .listening-now-sentence { font-family: var(--spanish-serif); font-size: 26px; line-height: 1.5; overflow-wrap: anywhere; }
@@ -231,6 +226,27 @@ a { color: inherit; text-decoration: none; }
 .listening-translation { color: var(--ink-soft); font-size: 14px; overflow-wrap: anywhere; }
 .listening-hidden, .listening-current { color: var(--ink-muted); font-size: 13px; }
 .listening-single { flex: none; min-height: 44px; padding: 6px 0 6px 8px; border: 0; background: transparent; color: var(--blue); font-size: 12px; }
+.my-sentences-page { gap: 18px; }
+.my-sentences-summary { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.my-sentences-summary p { margin: 0; }
+.my-sentence-list { margin: 0; padding: 0; list-style: none; }
+.my-sentence-item { padding: 15px 0 12px; border-bottom: 1px solid var(--rule); }
+.my-sentence-item:first-child { padding-top: 0; }
+.my-sentence-text { margin: 0; color: var(--ink); font-family: var(--spanish-serif); font-size: 19px; line-height: 1.5; overflow-wrap: anywhere; }
+.my-sentence-translation { margin: 4px 0 0; color: var(--ink-soft); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.my-sentence-date { margin: 5px 0 0; color: var(--ink-muted); font-size: 12px; }
+.my-sentence-actions { display: flex; align-items: center; gap: 16px; margin-top: 4px; }
+.my-sentence-actions .plain-button { min-height: 44px; }
+.my-sentence-remove { min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.my-sentence-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 4px 0 8px; }
+.my-sentence-confirm p { flex-basis: 100%; margin: 0; color: var(--ink-soft); font-size: 13px; }
+.my-sentences-empty { gap: 8px; }
+.listening-leave-dialog { width: min(calc(100% - 32px), 420px); margin: auto; padding: 20px 21px; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper); color: var(--ink); }
+.listening-leave-dialog::backdrop { background: rgb(34 30 25 / 28%); }
+.listening-leave-dialog h2 { margin: 0 0 8px; color: var(--ink); font-size: 18px; font-weight: 600; }
+.listening-leave-dialog p { margin: 0 0 18px; color: var(--ink-soft); font-size: 14px; line-height: 1.7; }
+.listening-leave-actions { display: flex; gap: 10px; }
+.listening-leave-actions .primary-button, .listening-leave-actions .secondary-button { width: auto; flex: 1; min-height: 46px; padding-inline: 10px; }
 
 .primary-button, .secondary-button, .plain-button {
   display: inline-flex;
@@ -301,9 +317,35 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; }
 .assessment-result { gap: 21px; padding: 20px 21px; background: var(--surface); }
 .record-save-status { margin: 0; color: var(--ink-soft); font-size: 13px; }
 .result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
-.assessment-overall { display: flex; align-items: baseline; gap: 9px; }
+.assessment-overall { position: relative; display: flex; align-items: baseline; gap: 9px; }
 .assessment-overall strong { font-family: var(--spanish-serif); font-size: 46px; font-weight: 500; line-height: 1; }
 .assessment-overall span { color: var(--ink-muted); font-size: 13px; }
+.assessment-perfect .assessment-overall::before {
+  position: absolute;
+  top: 50%;
+  left: 47px;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(.72);
+  opacity: 0;
+  animation: score-perfect-ring 850ms ease-out both;
+}
+.assessment-perfect .assessment-overall strong {
+  transform-origin: left center;
+  animation: score-perfect-pop 560ms cubic-bezier(.2,.8,.25,1) both;
+}
+@keyframes score-perfect-ring {
+  15% { opacity: .72; }
+  100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0; }
+}
+@keyframes score-perfect-pop {
+  0%, 100% { transform: scale(1); }
+  42% { transform: scale(1.1); }
+}
 .assessment-dimensions { display: grid; gap: 13px; }
 .assessment-dimension > div:first-child { display: flex; justify-content: space-between; color: var(--ink-soft); font-size: 13px; }
 .assessment-track { height: 5px; margin-top: 5px; background: var(--rule); }
@@ -327,6 +369,23 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; }
 .assessment-suggestions ul { margin: 0; padding-left: 19px; color: var(--ink-soft); font-size: 14px; }
 .assessment-suggestions li + li { margin-top: 4px; }
 .assessment-result .secondary-button { justify-self: start; }
+.score-trend { display: grid; gap: 2px; max-width: 460px; }
+.score-trend svg { width: 100%; height: auto; overflow: visible; }
+.score-trend line { stroke: var(--rule); stroke-width: 1; }
+.score-trend text { fill: var(--ink-muted); font: 11px var(--serif); }
+.score-trend-line { fill: none; stroke: var(--blue); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.score-trend circle { fill: var(--blue); }
+.score-trend p, .latest-practice-feedback p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+.latest-practice-feedback { display: grid; gap: 5px; margin-top: 16px; padding: 13px 14px; border-left: 2px solid var(--blue); background: var(--paper); }
+.latest-feedback-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ink-muted) !important; }
+.record-history-disclosure { margin-top: 14px; border-top: 1px solid var(--rule); }
+.record-history-disclosure summary { min-height: 44px; padding: 9px 0; color: var(--blue); cursor: pointer; }
+.record-history-disclosure .record-history { margin-top: 4px; }
+.practice-goal { margin: 10px 0 0; color: var(--ink-soft); font-size: 14px; }
+.word-audio-control { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.word-audio-control .plain-button { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; color: var(--blue); }
+.word-audio-control .plain-button svg { width: 17px; height: 17px; }
+.word-audio-control .tts-feedback { margin: 0; }
 
 .mobile-tabs, .bottom-action {
   position: fixed;
