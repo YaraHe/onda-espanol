@@ -15,9 +15,18 @@ const AuthContext = createContext<{
 } | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { clearLearning } = useSentenceDraft();
   const [status, setStatus] = useState<AuthStatus>("checking");
   const [userId, setUserId] = useState<string | null>(null);
   const requestId = useRef(0);
+  const lastUserId = useRef<string | null>(null);
+
+  const acceptUser = useCallback((nextUserId: string | null) => {
+    if (lastUserId.current !== nextUserId && lastUserId.current !== null) clearLearning();
+    lastUserId.current = nextUserId;
+    setUserId(nextUserId);
+    setStatus(nextUserId ? "signed-in" : "signed-out");
+  }, [clearLearning]);
 
   const refresh = useCallback(async () => {
     const currentRequest = ++requestId.current;
@@ -27,17 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
       if (!session) {
-        if (currentRequest === requestId.current) { setUserId(null); setStatus("signed-out"); }
+        if (currentRequest === requestId.current) acceptUser(null);
         return;
       }
 
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
-      if (currentRequest === requestId.current) { setUserId(user?.id ?? null); setStatus(user ? "signed-in" : "signed-out"); }
+      if (currentRequest === requestId.current) acceptUser(user?.id ?? null);
     } catch {
-      if (currentRequest === requestId.current) { setUserId(null); setStatus("error"); }
+      if (currentRequest === requestId.current) { acceptUser(null); setStatus("error"); }
     }
-  }, []);
+  }, [acceptUser]);
 
   useEffect(() => {
     let active = true;
@@ -47,12 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ({ data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === "SIGNED_OUT") {
           requestId.current += 1;
-          setUserId(null);
-          setStatus("signed-out");
+          acceptUser(null);
         } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "PASSWORD_RECOVERY") {
           requestId.current += 1;
-          setUserId(session?.user.id ?? null);
-          setStatus(session ? "signed-in" : "signed-out");
+          acceptUser(session?.user.id ?? null);
         }
       }));
     } catch {
@@ -64,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestId.current += 1;
       subscription?.unsubscribe();
     };
-  }, [refresh]);
+  }, [acceptUser, refresh]);
 
   return <AuthContext.Provider value={{ status, userId, refresh }}>{children}</AuthContext.Provider>;
 }

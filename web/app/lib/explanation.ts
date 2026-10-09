@@ -14,8 +14,10 @@ export type Explanation = {
 };
 
 export class ExplainError extends Error {
-  constructor(public readonly code: string, message: string) {
+  readonly code: string;
+  constructor(code: string, message: string) {
     super(message);
+    this.code = code;
   }
 }
 

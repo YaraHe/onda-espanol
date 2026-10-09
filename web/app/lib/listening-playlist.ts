@@ -1,5 +1,6 @@
 import type { PracticeRecordSummary } from "./practice-records";
 import type { LibrarySentence } from "./sentence-library";
+import type { PersonalSentence } from "./personal-sentences";
 import { sentenceIdentity } from "./sentence-identity.mjs";
 
 export type ListeningSentence = {
@@ -10,6 +11,17 @@ export type ListeningSentence = {
 };
 
 export type ListeningScope = "learned" | "all" | "custom";
+
+// Stage 4 listening candidates come only from the current user's saved collection.
+// The database ID is also the stable custom-selection value.
+export function makePersonalListeningPool(sentences: PersonalSentence[]): ListeningSentence[] {
+  return sentences.map((item) => ({
+    key: item.id,
+    sentence: item.sentence,
+    translation: item.translation,
+    learned: false,
+  }));
+}
 
 export function makeListeningPool(library: LibrarySentence[], records: PracticeRecordSummary[]): ListeningSentence[] {
   const pool = new Map<string, ListeningSentence>();

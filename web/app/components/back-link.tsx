@@ -9,7 +9,7 @@ export function BackLink({ fallback, beforeNavigate }: { fallback: string; befor
   function goBack() {
     if (beforeNavigate && !beforeNavigate()) return;
     const from = new URLSearchParams(window.location.search).get("from");
-    const destination = from && ["/", "/library", "/records"].includes(from) ? from : fallback;
+    const destination = from && ["/", "/listening", "/records"].includes(from) ? from : fallback;
     router.replace(destination);
   }
 

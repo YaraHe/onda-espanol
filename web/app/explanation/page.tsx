@@ -1,21 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageShell, SectionHeading } from "../components/page-shell";
+import { useAuth } from "../components/auth-provider";
 import { PronunciationAnnotation } from "../components/pronunciation-annotation";
 import { useSentenceDraft } from "../components/sentence-draft";
 import { useUserSettings } from "../components/user-settings-provider";
 import { ExplainError, fetchExplanation } from "../lib/explanation";
+import { savePersonalSentence } from "../lib/personal-sentences";
 
 export default function ExplanationPage() {
   const router = useRouter();
+  const { userId } = useAuth();
   const { explainedSentence, explanation, learningOrigin, recordReturnId, setRequestedExplanation, clearLearning } = useSentenceDraft();
   const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
   const [retry, setRetry] = useState(0);
   const [queryState, setQueryState] = useState<"loading" | "error">("loading");
   const [queryError, setQueryError] = useState("");
+  const [collection, setCollection] = useState<{ userId: string; sentence: string; explanation: NonNullable<typeof explanation>; status: "saving" | "saved" | "error" } | null>(null);
+  const collectionRequest = useRef<{ userId: string; sentence: string; explanation: NonNullable<typeof explanation> } | null>(null);
+  const collectionAttempt = useRef(0);
 
   useEffect(() => {
     if (learningOrigin === "select" || !explainedSentence || explanation || !lang) return;
@@ -31,6 +37,34 @@ export default function ExplanationPage() {
     return () => { active = false; controller.abort(); };
   }, [explainedSentence, explanation, lang, learningOrigin, retry, setRequestedExplanation]);
 
+  useEffect(() => {
+    if (!userId || !explainedSentence || !explanation) return;
+    const previous = collectionRequest.current;
+    if (previous?.userId === userId && previous.sentence === explainedSentence && previous.explanation === explanation) return;
+    collectionRequest.current = { userId, sentence: explainedSentence, explanation };
+    const attempt = ++collectionAttempt.current;
+    queueMicrotask(() => setCollection({ userId, sentence: explainedSentence, explanation, status: "saving" }));
+    void savePersonalSentence({ sentence: explainedSentence, translation: explanation.translation }, userId).then(() => {
+      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "saved" });
+    }).catch(() => {
+      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "error" });
+    });
+  }, [userId, explainedSentence, explanation]);
+
+  function retryCollection() {
+    if (!userId || !explainedSentence || !explanation) return;
+    const attempt = ++collectionAttempt.current;
+    setCollection({ userId, sentence: explainedSentence, explanation, status: "saving" });
+    void savePersonalSentence({ sentence: explainedSentence, translation: explanation.translation }, userId).then(() => {
+      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "saved" });
+    }).catch(() => {
+      if (attempt === collectionAttempt.current) setCollection({ userId, sentence: explainedSentence, explanation, status: "error" });
+    });
+  }
+
+  const collectionStatus = collection?.userId === userId && collection.sentence === explainedSentence && collection.explanation === explanation
+    ? collection.status : "saving";
+
   function changeSentence() {
     clearLearning();
     router.push("/");
@@ -39,7 +73,7 @@ export default function ExplanationPage() {
   return (
     <PageShell
       title="句子讲解"
-      backHref={learningOrigin === "library" ? "/library" : learningOrigin === "records" && recordReturnId ? `/records/detail?id=${encodeURIComponent(recordReturnId)}` : "/"}
+      backHref={learningOrigin === "records" && recordReturnId ? `/records/detail?id=${encodeURIComponent(recordReturnId)}` : "/"}
       action={explanation ? <button type="button" className="primary-button" onClick={() => router.push("/practice")}>去跟读</button> : undefined}
     >
       {!explanation && learningOrigin !== "select" && explainedSentence ? (
@@ -65,6 +99,9 @@ export default function ExplanationPage() {
             <SectionHeading>原句</SectionHeading>
             <p className="learning-sentence" lang="es">{explainedSentence}</p>
             <PronunciationAnnotation annotation={explanation.annotation} />
+            {collectionStatus === "saving" && <p className="supporting-copy" role="status">正在收录到我的句子…</p>}
+            {collectionStatus === "saved" && <p className="supporting-copy" role="status">已收录到我的句子</p>}
+            {collectionStatus === "error" && <p className="form-error" role="alert">讲解已生成，但句子尚未收录。<button type="button" className="inline-retry" onClick={retryCollection}>只重试收录</button></p>}
           </section>
 
           <section className="section-block understanding-surface">

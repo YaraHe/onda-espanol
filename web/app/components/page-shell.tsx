@@ -3,11 +3,11 @@ import type { ReactNode } from "react";
 import { BackLink } from "./back-link";
 import { Icon } from "./icons";
 
-type PrimaryPage = "select" | "library" | "records";
+type PrimaryPage = "select" | "listening" | "records";
 
 const tabs = [
   { id: "select", label: "选句", href: "/", icon: "search" },
-  { id: "library", label: "句子库", href: "/library", icon: "book" },
+  { id: "listening", label: "听熟", href: "/listening", icon: "headphones" },
   { id: "records", label: "记录", href: "/records", icon: "history" },
 ] as const;
 

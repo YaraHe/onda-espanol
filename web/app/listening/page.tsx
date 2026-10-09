@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "../components/auth-provider";
 import { EmptyText, PageShell, SectionHeading } from "../components/page-shell";
 import { useUserSettings } from "../components/user-settings-provider";
@@ -9,16 +10,14 @@ import {
   type ListeningPreferences,
 } from "../lib/listening-preferences";
 import {
-  makeListeningPlaylist, makeListeningPool, validCustomSelection,
+  makeListeningPlaylist, makePersonalListeningPool, validCustomSelection,
   type ListeningScope,
 } from "../lib/listening-playlist";
-import { listAllPracticeRecords, type PracticeRecordSummary } from "../lib/practice-records";
-import { librarySentences } from "../lib/sentence-library";
+import { listPersonalSentences, type PersonalSentence } from "../lib/personal-sentences";
 import { useListeningPlayer } from "../lib/use-listening-player";
 
 const scopes: { value: ListeningScope; label: string }[] = [
-  { value: "learned", label: "已学" },
-  { value: "all", label: "全部" },
+  { value: "all", label: "全部个人句子" },
   { value: "custom", label: "自定义" },
 ];
 
@@ -27,7 +26,7 @@ export default function ListeningPage() {
   const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
   const [loadStatus, setLoadStatus] = useState<"loading" | "ready" | "error">("loading");
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
-  const [records, setRecords] = useState<PracticeRecordSummary[]>([]);
+  const [sentences, setSentences] = useState<PersonalSentence[]>([]);
   const [preferences, setPreferences] = useState<ListeningPreferences>({ ...defaultListeningPreferences, customSelection: [] });
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const preferencesRef = useRef(preferences);
@@ -37,7 +36,7 @@ export default function ListeningPage() {
   const saveQueue = useRef<{ userId: string | null; pending: ListeningPreferences | null; running: boolean }>({ userId, pending: null, running: false });
 
   const ready = loadStatus === "ready" && loadedUserId === userId;
-  const pool = useMemo(() => makeListeningPool(librarySentences, loadedUserId === userId ? records : []), [loadedUserId, records, userId]);
+  const pool = useMemo(() => makePersonalListeningPool(loadedUserId === userId ? sentences : []), [loadedUserId, sentences, userId]);
   const playlist = useMemo(
     () => ready ? makeListeningPlaylist(pool, preferences.scope, preferences.customSelection) : [],
     [pool, preferences.scope, preferences.customSelection, ready],
@@ -57,13 +56,14 @@ export default function ListeningPage() {
     setLoadStatus("loading");
     setSaveStatus("idle");
     try {
-      const [saved, learned] = await Promise.all([readListeningPreferences(userId), listAllPracticeRecords()]);
+      const [saved, ownSentences] = await Promise.all([readListeningPreferences(userId), listPersonalSentences()]);
       if (!mounted.current || generation !== loadGeneration.current || currentUser.current !== userId) return;
-      const currentPool = makeListeningPool(librarySentences, learned);
-      const loaded = { ...saved, customSelection: validCustomSelection(saved.customSelection, currentPool) };
+      const currentPool = makePersonalListeningPool(ownSentences);
+      const loaded = { ...saved, scope: saved.scope === "learned" ? "all" as const : saved.scope,
+        customSelection: validCustomSelection(saved.customSelection, currentPool) };
       preferencesRef.current = loaded;
       setPreferences(loaded);
-      setRecords(learned);
+      setSentences(ownSentences);
       setLoadedUserId(userId);
       setLoadStatus("ready");
     } catch {
@@ -126,14 +126,14 @@ export default function ListeningPage() {
   }
 
   return (
-    <PageShell title="磨耳朵" backHref="/library" action={
+    <PageShell title="听熟" primary="listening" action={
       <button type="button" className={`primary-button${player.phase === "loading" ? " is-loading" : ""}`} disabled={!canPlay && !busy} onClick={primaryAction}>
         {busy ? "暂停" : "开始播放"}
       </button>
     }>
       <div className="page-stack listening-page">
         {(loadStatus === "loading" || (loadStatus === "ready" && !ready)) && <p className="supporting-copy" role="status">正在加载播放设置和句子…</p>}
-        {loadStatus === "error" && <p className="form-error" role="alert">播放设置或练习记录加载失败。<button type="button" className="inline-retry" onClick={() => void load()}>重试</button></p>}
+        {loadStatus === "error" && <p className="form-error" role="alert">播放设置或个人句子加载失败。<button type="button" className="inline-retry" onClick={() => void load()}>重试</button></p>}
         {ready && <>
           {player.activeKey && <section className="listening-now" aria-live="polite">
             <p className="section-heading">当前播放</p>
@@ -151,13 +151,13 @@ export default function ListeningPage() {
             <div className="option-row" role="group" aria-label="朗读范围">
               {scopes.map((choice) => <button key={choice.value} type="button" aria-pressed={preferences.scope === choice.value} className={`option-choice${preferences.scope === choice.value ? " selected" : ""}`} onClick={() => changeScope(choice.value)}>{choice.label}</button>)}
             </div>
-            {preferences.scope === "custom" && <div className="listening-custom">
-              <p className="field-label">选择句子 <span className="listening-count">已选 {validCustomSelection(preferences.customSelection, pool).length} 句</span></p>
+            {preferences.scope === "custom" && <details className="listening-custom">
+              <summary className="field-label">选择句子 <span className="listening-count">已选 {validCustomSelection(preferences.customSelection, pool).length} 句</span></summary>
               <ul className="listening-choice-list">{pool.map((item) => <li key={item.key}><label>
                 <input type="checkbox" checked={preferences.customSelection.includes(item.key)} onChange={() => toggleCustom(item.key)} />
                 <span lang="es">{item.sentence}</span>
               </label></li>)}</ul>
-            </div>}
+            </details>}
           </section>
           <section className="section-block">
             <SectionHeading>播放设置</SectionHeading>
@@ -182,16 +182,18 @@ export default function ListeningPage() {
           {saveStatus === "saved" && <p className="supporting-copy" role="status">播放设置已保存</p>}
           {saveStatus === "error" && <p className="form-error" role="alert">播放设置未保存。<button type="button" className="inline-retry" onClick={() => void flushSaveQueue()}>重试</button></p>}
           <section className="section-block">
-            <SectionHeading>播放列表 <span className="listening-count">{playlist.length} 句</span></SectionHeading>
-            {!playlist.length ? <EmptyText>{preferences.scope === "learned" ? "还没有已练习的句子，可选择「全部」" : preferences.scope === "custom" ? "请先选择要播放的句子" : "暂无可播放的句子"}</EmptyText>
-              : <ul className="listening-playlist">{playlist.map((item, index) => <li key={item.key} className={player.activeKey === item.key ? "is-current" : ""}>
+            <SectionHeading>本次 {playlist.length} 句</SectionHeading>
+            {!playlist.length ? <>
+              <EmptyText>{!pool.length ? "还没有个人句子。先去选句页完成一句讲解。" : preferences.scope === "custom" ? "自定义范围没有有效句子，请重新选择。" : "暂无可播放的句子"}</EmptyText>
+              {!pool.length && <Link href="/" className="inline-link">去选句</Link>}
+            </> : <details className="listening-list-details"><summary>查看本次句子</summary><ul className="listening-playlist">{playlist.map((item, index) => <li key={item.key} className={player.activeKey === item.key ? "is-current" : ""}>
                 <div className="listening-list-content">
                   {preferences.showText ? <span className="listening-sentence" lang="es">{item.sentence}</span> : <span className="listening-hidden">第 {index + 1} 句</span>}
                   {preferences.showTranslation && <span className="listening-translation">{item.translation || "暂无翻译"}</span>}
                   {player.activeKey === item.key && statusText && <span className="listening-current">{statusText}</span>}
                 </div>
-                <button type="button" className="listening-single" aria-label={`单句播放第 ${index + 1} 句`} disabled={!lang || dialectStatus !== "ready"} onClick={() => player.playSingle(item, index)}>单句播放</button>
-              </li>)}</ul>}
+                <button type="button" className="listening-single" aria-label={`单句播放第 ${index + 1} 句`} disabled={!lang || dialectStatus !== "ready" || player.phase !== "playing"} onClick={() => player.playSingle(item, index)}>单句播放</button>
+              </li>)}</ul></details>}
           </section>
         </>}
       </div>

@@ -21,13 +21,14 @@ async function currentUserId(): Promise<string> {
 }
 
 /** Add a sentence once per user while preserving its original display form. */
-export async function savePersonalSentence(draft: PersonalSentenceDraft): Promise<PersonalSentence> {
+export async function savePersonalSentence(draft: PersonalSentenceDraft, expectedUserId?: string): Promise<PersonalSentence> {
   const sentence = draft.sentence.trim();
   const identityKey = sentenceIdentity(sentence);
   if (!identityKey) throw new Error("句子不能为空");
 
   const client = getSupabaseClient();
   const userId = await currentUserId();
+  if (expectedUserId && userId !== expectedUserId) throw new Error("登录账号已变化，请在当前账号重新查询");
   const translation = draft.translation?.trim() || null;
   const { data: existing, error: lookupError } = await client.from("personal_sentences")
     .select("id,sentence,translation,identity_key,created_at")

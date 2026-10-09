@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import type { Worker } from "tesseract.js";
 import { Icon } from "./icons";
 import { useSentenceDraft } from "./sentence-draft";
 import { isReliableOcrResult, normalizeSpanishOcrText } from "../lib/ocr";
-import { librarySentences, pickRandomSentence } from "../lib/sentence-library";
 
 export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
   const { sentence, setSentence } = useSentenceDraft();
@@ -138,11 +136,6 @@ export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
       />
       <div className="assistance-row">
         <button type="button" disabled={ocrStatus === "processing"} className={`text-action${ocrStatus === "processing" ? " is-loading" : ""}`} onClick={() => { setOcrError(""); fileInput.current?.click(); }}><Icon name="camera" />{ocrStatus === "processing" ? "识别中…" : "文字识别"}</button>
-        <button type="button" className="text-action" onClick={() => {
-          const picked = pickRandomSentence(librarySentences);
-          if (picked) updateSentence(picked.sentence);
-        }}><Icon name="shuffle" />随机一句</button>
-        <Link href="/library" className="text-action"><Icon name="book" />从句子库选</Link>
       </div>
     </section>
   );
