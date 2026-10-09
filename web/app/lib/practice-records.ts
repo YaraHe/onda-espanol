@@ -1,5 +1,6 @@
 import type { AssessmentResult } from "./assessment";
 import { getSupabaseClient } from "./supabase";
+import { matchingSentenceRecords } from "./sentence-identity.mjs";
 
 export type PracticeRecordDraft = {
   id: string;
@@ -99,12 +100,11 @@ export async function getPracticeRecordDetail(recordId: string): Promise<Practic
     const { data, error } = await client.from("practice_records")
       .select("id,sentence,translation,overall,accuracy,fluency,completeness,speaking_rate,created_at")
       .eq("user_id", userId)
-      .eq("sentence", selected.sentence)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(offset, offset + pageSize - 1);
     if (error) throw new Error("练习历史加载失败，请重试");
-    history.push(...(data ?? []) as PracticeRecordAttempt[]);
+    history.push(...matchingSentenceRecords((data ?? []) as PracticeRecordAttempt[], selected.sentence));
     if (!data || data.length < pageSize) break;
   }
   return {

@@ -1,5 +1,6 @@
 import type { PracticeRecordSummary } from "./practice-records";
 import type { LibrarySentence } from "./sentence-library";
+import { sentenceIdentity } from "./sentence-identity.mjs";
 
 export type ListeningSentence = {
   key: string;
@@ -9,10 +10,6 @@ export type ListeningSentence = {
 };
 
 export type ListeningScope = "learned" | "all" | "custom";
-
-function sentenceIdentity(sentence: string): string {
-  return sentence.trim().normalize("NFC").replace(/\s+/gu, " ").toLocaleLowerCase("es");
-}
 
 export function makeListeningPool(library: LibrarySentence[], records: PracticeRecordSummary[]): ListeningSentence[] {
   const pool = new Map<string, ListeningSentence>();
