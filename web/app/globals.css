@@ -204,6 +204,42 @@ a { color: inherit; text-decoration: none; }
 .toggle-row + .toggle-row { border-top: 1px solid var(--rule); }
 .toggle-row input { accent-color: var(--blue); width: 19px; height: 19px; }
 .listening-page { gap: 30px; }
+.listening-intro, .sentence-library-intro { display: grid; gap: 7px; }
+.listening-intro-eyebrow, .sentence-library-eyebrow { margin: 0; color: var(--ink-muted); font-size: 12px; letter-spacing: .08em; }
+.listening-intro-lead, .sentence-library-lead { margin: 0; color: var(--ink); font-family: var(--serif); font-size: 21px; line-height: 1.55; }
+.sentence-library-page { gap: 25px; }
+.sentence-library-tools { display: grid; gap: 12px; }
+.sentence-library-summary { display: flex; justify-content: space-between; color: var(--ink-muted); font-size: 13px; }
+.sentence-library-search { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; border-bottom: 1px solid var(--rule); background: var(--surface); }
+.sentence-library-search input { flex: 1; min-width: 0; min-height: 46px; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
+.sentence-library-search input::placeholder { color: var(--ink-muted); }
+.sentence-library-search button { min-height: 40px; border: 0; background: transparent; color: var(--blue); font: inherit; font-size: 13px; }
+.sentence-library-no-results { margin: 4px 0; color: var(--ink-muted); font-size: 14px; line-height: 1.8; }
+.sentence-library-groups { display: grid; gap: 8px; }
+.sentence-month { border-top: 1px solid var(--rule); }
+.sentence-month-heading, .sentence-day-heading { display: flex; align-items: center; gap: 10px; }
+.sentence-month-heading { min-height: 58px; }
+.sentence-day-heading { min-height: 50px; padding-left: 20px; }
+.sentence-month-heading > input, .sentence-day-heading > input, .sentence-item-check input { flex: none; width: 19px; height: 19px; accent-color: var(--blue); }
+.sentence-group-toggle { display: flex; flex: 1; align-items: center; gap: 10px; min-height: 48px; padding: 0; border: 0; background: transparent; color: var(--ink); text-align: left; font: inherit; }
+.sentence-group-chevron { width: 14px; color: var(--blue); font-size: 22px; line-height: 1; }
+.sentence-group-count { margin-left: auto; color: var(--ink-muted); font-size: 12px; }
+.sentence-month-days { margin-left: 5px; border-left: 1px solid var(--rule); }
+.sentence-day { border-top: 1px solid var(--rule); }
+.sentence-library-list { margin: 0; padding: 0 0 0 19px; list-style: none; }
+.sentence-library-item { display: flex; align-items: flex-start; gap: 12px; padding: 15px 0 14px; border-top: 1px solid var(--rule); }
+.sentence-library-item:first-child { border-top: 0; }
+.sentence-item-check { display: grid; flex: none; place-items: center; width: 28px; min-height: 44px; cursor: pointer; }
+.sentence-library-copy { flex: 1; min-width: 0; }
+.sentence-library-action { display: grid; grid-template-columns: 1fr 1.55fr; gap: 10px; }
+.sentence-library-action .secondary-button, .sentence-library-action .primary-button { min-height: 48px; }
+.inline-link-button { padding: 0; border: 0; background: transparent; color: var(--blue); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.listening-task-controls { display: grid; gap: 9px; margin-top: 13px; }
+.listening-task-controls button { min-height: 46px; }
+.listening-group-controls { grid-template-columns: 1fr 1fr; }
+.listening-focus-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.listening-end-focus { grid-column: 1 / -1; justify-self: end; min-width: 120px; }
+.listening-now.is-focus { padding: 22px 0; }
 .listening-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .my-sentences-link { flex: none; min-height: 44px; padding: 0 2px; border: 0; background: transparent; color: var(--blue); font-size: 13px; text-decoration: underline; text-underline-offset: 4px; }
 .listening-now { display: grid; gap: 5px; padding: 18px 0 16px; border-bottom: 1px solid var(--rule); }
@@ -225,7 +261,6 @@ a { color: inherit; text-decoration: none; }
 .listening-sentence { font-family: var(--spanish-serif); font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
 .listening-translation { color: var(--ink-soft); font-size: 14px; overflow-wrap: anywhere; }
 .listening-hidden, .listening-current { color: var(--ink-muted); font-size: 13px; }
-.listening-single { flex: none; min-height: 44px; padding: 6px 0 6px 8px; border: 0; background: transparent; color: var(--blue); font-size: 12px; }
 .my-sentences-page { gap: 18px; }
 .my-sentences-summary { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .my-sentences-summary p { margin: 0; }

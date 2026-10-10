@@ -1,6 +1,7 @@
 import type { PracticeRecordSummary } from "./practice-records";
 import type { LibrarySentence } from "./sentence-library";
 import type { PersonalSentence } from "./personal-sentences";
+import type { ListeningScope } from "./listening-scope";
 import { sentenceIdentity } from "./sentence-identity.mjs";
 
 export type ListeningSentence = {
@@ -9,8 +10,6 @@ export type ListeningSentence = {
   translation: string | null;
   learned: boolean;
 };
-
-export type ListeningScope = "learned" | "all" | "custom";
 
 // Stage 4 listening candidates come only from the current user's saved collection.
 // The database ID is also the stable custom-selection value.
@@ -68,4 +67,9 @@ export function makeListeningPlaylist(pool: ListeningSentence[], scope: Listenin
 
 export function nextListeningIndex(index: number, playlistLength: number): number {
   return playlistLength ? (index + 1) % playlistLength : 0;
+}
+
+export function relativeListeningIndex(index: number, playlistLength: number, offset: -1 | 1): number {
+  if (!playlistLength) return 0;
+  return ((index + offset) % playlistLength + playlistLength) % playlistLength;
 }

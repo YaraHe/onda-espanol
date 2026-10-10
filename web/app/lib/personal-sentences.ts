@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "./supabase";
+import { collectPersonalSentencePages } from "./personal-sentence-pages.mjs";
 import { sentenceIdentity } from "./sentence-identity.mjs";
 
 export type PersonalSentence = {
@@ -99,13 +100,13 @@ export async function savePersonalSentence(draft: PersonalSentenceDraft, expecte
 export async function listPersonalSentences(): Promise<PersonalSentence[]> {
   const client = getSupabaseClient();
   const userId = await currentUserId();
-  const { data, error } = await client.from("personal_sentences")
-    .select("id,sentence,translation,identity_key,created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false });
-  if (error) throw new Error("个人句子加载失败，请重试");
-  return (data ?? []) as PersonalSentence[];
+  const pageSize = 100;
+  return collectPersonalSentencePages<PersonalSentence>((offset, size) => client.from("personal_sentences")
+      .select("id,sentence,translation,identity_key,created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + size - 1), pageSize);
 }
 
 export async function removePersonalSentence(id: string): Promise<void> {

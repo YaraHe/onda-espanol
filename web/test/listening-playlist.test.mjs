@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { makeListeningPlaylist, makeListeningPool, makePersonalListeningPool, nextListeningIndex, validCustomSelection } from "../app/lib/listening-playlist.ts";
+import { makeListeningPlaylist, makeListeningPool, makePersonalListeningPool, nextListeningIndex, relativeListeningIndex, validCustomSelection } from "../app/lib/listening-playlist.ts";
 
 const library = [
   { id: "one", sentence: "Hola, Ana.", translation: "你好，安娜。" },
@@ -35,6 +35,14 @@ test("continuous playback wraps to the first entry", () => {
   assert.equal(nextListeningIndex(0, 2), 1);
   assert.equal(nextListeningIndex(1, 2), 0);
   assert.equal(nextListeningIndex(0, 0), 0);
+});
+
+test("single-sentence focus navigation wraps in both directions and handles an empty playlist", () => {
+  assert.equal(relativeListeningIndex(0, 3, -1), 2);
+  assert.equal(relativeListeningIndex(2, 3, 1), 0);
+  assert.equal(relativeListeningIndex(1, 3, -1), 0);
+  assert.equal(relativeListeningIndex(1, 3, 1), 2);
+  assert.equal(relativeListeningIndex(0, 0, -1), 0);
 });
 
 test("Stage 4 playback uses only saved personal IDs and excludes removed or legacy references", () => {

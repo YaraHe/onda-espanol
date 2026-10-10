@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nextListeningIndex, type ListeningSentence } from "./listening-playlist";
+import { releaseAudioSource } from "./release-audio-source.mjs";
 import { TtsError, fetchDemoAudio } from "./tts";
 
 type Phase = "idle" | "loading" | "playing" | "gap" | "paused";
-type Mode = "loop" | "single";
+type Mode = "loop" | "focus";
 type Target = { entry: ListeningSentence; index: number; mode: Mode };
 type Playback = {
   generation: number;
@@ -21,9 +22,12 @@ type Playback = {
 export function useListeningPlayer(playlist: ListeningSentence[], rate: number, intervalSeconds: number, lang: string | null) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [retryTarget, setRetryTarget] = useState<Target | null>(null);
   const options = useRef({ playlist, rate, intervalSeconds, lang });
+  const focusTarget = useRef<Target | null>(null);
+  const focusRestore = useRef<{ target: Target; wasStarted: boolean } | null>(null);
   const playback = useRef<Playback>({
     generation: 0, phase: "idle", target: null, controller: null,
     requestTimeout: null, gapTimer: null, audio: null, url: null,
@@ -43,14 +47,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
 
   const releaseSource = useCallback(() => {
     const current = playback.current;
-    if (current.audio) {
-      current.audio.onended = null;
-      current.audio.onerror = null;
-      current.audio.pause();
-      current.audio.removeAttribute("src");
-      current.audio.load();
-    }
-    if (current.url) URL.revokeObjectURL(current.url);
+    releaseAudioSource(current.audio, current.url);
     current.url = null;
   }, []);
 
@@ -62,16 +59,29 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     current.audio = null;
     current.target = null;
     current.phase = "idle";
-    if (updateState) { setPhase("idle"); setActiveKey(null); setError(""); setRetryTarget(null); }
+    focusTarget.current = null;
+    focusRestore.current = null;
+    if (updateState) {
+      setPhase("idle"); setActiveKey(null); setFocusKey(null); setError(""); setRetryTarget(null);
+    }
   }, [clearPending, releaseSource]);
 
   const fail = useCallback((target: Target, message: string) => {
-    stop();
+    const current = playback.current;
+    current.generation += 1;
+    clearPending();
+    releaseSource();
+    current.audio = null;
+    current.target = null;
+    current.phase = "idle";
+    setPhase("idle");
+    setActiveKey(null);
     setRetryTarget(target);
     setError(message);
-  }, [stop]);
+    if (target.mode === "focus") setFocusKey(target.entry.key);
+  }, [clearPending, releaseSource]);
 
-  const playItem = useCallback(async function playItem(target: Target) {
+  const playItem = useCallback(async function playItem(target: Target, autoplay = true) {
     const current = playback.current;
     current.generation += 1;
     const generation = current.generation;
@@ -81,6 +91,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     current.phase = "loading";
     setPhase("loading");
     setActiveKey(target.entry.key);
+    if (target.mode === "focus") setFocusKey(target.entry.key);
     setError("");
     setRetryTarget(null);
 
@@ -94,13 +105,16 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
       current.requestTimeout = null;
       current.controller = null;
       current.url = URL.createObjectURL(blob);
-      const audio = current.audio ?? new Audio();
+      const audio = new Audio(current.url);
       current.audio = audio;
-      audio.src = current.url;
       audio.onended = () => {
         if (generation !== current.generation || current.phase !== "playing") return;
+        if (target.mode === "focus") {
+          audio.currentTime = 0;
+          void audio.play().catch(() => fail(target, "音频无法继续播放，请重试"));
+          return;
+        }
         releaseSource();
-        if (target.mode === "single") { stop(); return; }
         const entries = options.current.playlist;
         const nextIndex = nextListeningIndex(target.index, entries.length);
         const nextEntry = entries[nextIndex];
@@ -115,6 +129,11 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
         }, options.current.intervalSeconds * 1000);
       };
       audio.onerror = () => { if (generation === current.generation) fail(target, "音频无法播放，请重试"); };
+      if (!autoplay) {
+        current.phase = "paused";
+        setPhase("paused");
+        return;
+      }
       await audio.play();
       if (generation === current.generation) { current.phase = "playing"; setPhase("playing"); }
     } catch (cause) {
@@ -155,11 +174,61 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     if (first && options.current.lang) void playItem({ entry: first, index: 0, mode: "loop" });
   }, [playItem]);
 
-  const playSingle = useCallback((entry: ListeningSentence, index: number) => {
-    if (options.current.lang) void playItem({ entry, index, mode: "single" });
+  const startFocus = useCallback((entry: ListeningSentence, index: number) => {
+    const current = playback.current;
+    if (!options.current.lang || current.target?.mode === "focus") return;
+    const wasStarted = current.target?.mode === "loop";
+    const restoreTarget = wasStarted ? current.target : null;
+    focusRestore.current = restoreTarget ? { target: restoreTarget, wasStarted: true } : null;
+    current.generation += 1;
+    clearPending();
+    releaseSource();
+    current.audio = null;
+    current.target = null;
+    current.phase = "idle";
+    const target: Target = { entry, index, mode: "focus" };
+    focusTarget.current = target;
+    setFocusKey(entry.key);
+    void playItem(target);
+  }, [clearPending, playItem, releaseSource]);
+
+  const switchFocus = useCallback((entry: ListeningSentence, index: number) => {
+    if (!focusTarget.current) return;
+    const target: Target = { entry, index, mode: "focus" };
+    focusTarget.current = target;
+    void playItem(target, playback.current.phase === "paused");
   }, [playItem]);
 
-  const retry = useCallback(() => { if (retryTarget && options.current.lang) void playItem(retryTarget); }, [playItem, retryTarget]);
+  const regenerateFocus = useCallback(() => {
+    const target = focusTarget.current;
+    if (!target || !options.current.lang) return;
+    void playItem(target, playback.current.phase === "paused");
+  }, [playItem]);
+
+  const endFocus = useCallback(() => {
+    if (!focusTarget.current) return;
+    const restore = focusRestore.current;
+    stop();
+    if (restore?.wasStarted && restore.target) {
+      const pausedTarget: Target = { ...restore.target, mode: "loop" };
+      const current = playback.current;
+      current.target = pausedTarget;
+      current.phase = "paused";
+      setPhase("paused");
+      setActiveKey(pausedTarget.entry.key);
+      setError("");
+      setRetryTarget(null);
+    }
+  }, [stop]);
+
+  const retry = useCallback(() => {
+    if (!retryTarget || !options.current.lang) return;
+    if (retryTarget.mode === "focus") {
+      focusTarget.current = retryTarget;
+      setFocusKey(retryTarget.entry.key);
+    }
+    void playItem(retryTarget);
+  }, [playItem, retryTarget]);
 
   useEffect(() => { stop(); }, [playlist, stop]);
   useEffect(() => {
@@ -168,5 +237,5 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     return () => { window.removeEventListener("pagehide", leave); stop(false); };
   }, [stop]);
 
-  return { phase, activeKey, error, canRetry: Boolean(retryTarget), startLoop, playSingle, pause, resume, retry, stop };
+  return { phase, activeKey, focusKey, isFocusing: focusTarget.current !== null, error, canRetry: Boolean(retryTarget), startLoop, startFocus, switchFocus, regenerateFocus, endFocus, pause, resume, retry, stop };
 }

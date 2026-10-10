@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "./supabase";
-import type { ListeningScope } from "./listening-playlist";
+import { normalizeListeningScope, type ListeningScope } from "./listening-scope";
 
 export type ListeningPreferences = {
   scope: ListeningScope;
@@ -20,14 +20,13 @@ export const defaultListeningPreferences: ListeningPreferences = {
 };
 
 function fromRow(row: Record<string, unknown>): ListeningPreferences {
-  const scope = row.listening_scope;
+  const scope = normalizeListeningScope(row.listening_scope);
   const rate = row.listening_rate;
   const interval = row.listening_interval_seconds;
   const showText = row.listening_show_text;
   const showTranslation = row.listening_show_translation;
   const customSelection = row.listening_custom_selection;
-  if ((scope !== "learned" && scope !== "all" && scope !== "custom")
-    || typeof rate !== "number" || !Number.isFinite(rate) || rate < 0.6 || rate > 1.2
+  if (typeof rate !== "number" || !Number.isFinite(rate) || rate < 0.6 || rate > 1.2
     || (interval !== 1 && interval !== 2 && interval !== 4)
     || typeof showText !== "boolean" || typeof showTranslation !== "boolean"
     || !Array.isArray(customSelection) || !customSelection.every((value) => typeof value === "string")) {
