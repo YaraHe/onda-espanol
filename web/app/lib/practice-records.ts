@@ -2,6 +2,7 @@ import type { AssessmentResult } from "./assessment";
 import { getSupabaseClient } from "./supabase";
 import { matchingSentenceRecords } from "./sentence-identity.mjs";
 import { collectRecentUniqueSentences } from "./recent-practice.mjs";
+import { insertAndVerifyPracticeRecord, PracticeRecordConflictError, samePersistedPracticeRecord } from "./practice-recovery.mjs";
 
 export type PracticeRecordDraft = {
   id: string;
@@ -34,6 +35,19 @@ export type PracticeRecordDetail = {
   history: PracticeRecordAttempt[];
 };
 
+export type PersistedPracticeRecord = {
+  id: string;
+  user_id: string;
+  sentence: string;
+  translation: string | null;
+  overall: number | null;
+  accuracy: number | null;
+  fluency: number | null;
+  completeness: number | null;
+  speaking_rate: number | null;
+  raw_feedback: unknown;
+};
+
 async function currentUserId(): Promise<string> {
   const { data: { user }, error } = await getSupabaseClient().auth.getUser();
   if (error || !user) throw new Error("登录状态已失效，请重新登录后重试");
@@ -45,7 +59,7 @@ export async function savePracticeRecord(draft: PracticeRecordDraft): Promise<vo
   const { data: { user }, error: authError } = await client.auth.getUser();
   if (authError || !user) throw new Error("登录状态已失效，请重新登录后重试保存");
 
-  const { error } = await client.from("practice_records").upsert({
+  const row = {
     id: draft.id,
     user_id: user.id,
     sentence: draft.sentence,
@@ -56,8 +70,48 @@ export async function savePracticeRecord(draft: PracticeRecordDraft): Promise<vo
     completeness: draft.result.completeness,
     speaking_rate: draft.result.speakingRate.wpm,
     raw_feedback: draft.result.words,
-  }, { onConflict: "id" });
-  if (error) throw new Error("保存失败，请检查网络后重试");
+  };
+
+  try {
+    await insertAndVerifyPracticeRecord({
+      candidate: row,
+      find: (id: string) => client.from("practice_records")
+        .select("id,user_id,sentence,translation,overall,accuracy,fluency,completeness,speaking_rate,raw_feedback")
+        .eq("user_id", user.id)
+        .eq("id", id)
+        .maybeSingle(),
+      insert: (candidate: PersistedPracticeRecord) => client.from("practice_records").insert(candidate),
+    });
+  } catch (error) {
+    if (error instanceof PracticeRecordConflictError) throw error;
+    throw new Error("保存失败，请检查网络后重试");
+  }
+}
+
+export async function reconcilePracticeRecord(draft: PracticeRecordDraft): Promise<"saved" | "missing"> {
+  const client = getSupabaseClient();
+  const userId = await currentUserId();
+  const { data, error } = await client.from("practice_records")
+    .select("id,user_id,sentence,translation,overall,accuracy,fluency,completeness,speaking_rate,raw_feedback")
+    .eq("user_id", userId)
+    .eq("id", draft.id)
+    .maybeSingle();
+  if (error) throw new Error("保存状态暂时无法核对，请检查网络后重试");
+  if (!data) return "missing";
+  const candidate = {
+    id: draft.id,
+    user_id: userId,
+    sentence: draft.sentence,
+    translation: draft.translation,
+    overall: draft.result.overall,
+    accuracy: draft.result.accuracy,
+    fluency: draft.result.fluency,
+    completeness: draft.result.completeness,
+    speaking_rate: draft.result.speakingRate.wpm,
+    raw_feedback: draft.result.words,
+  };
+  if (!samePersistedPracticeRecord(data as PersistedPracticeRecord, candidate)) throw new PracticeRecordConflictError();
+  return "saved";
 }
 
 export async function listRecentPracticeSentences(): Promise<string[]> {

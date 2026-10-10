@@ -6,18 +6,54 @@ import { useRouter } from "next/navigation";
 import { Icon } from "../components/icons";
 import { EmptyText, PageShell, SectionHeading } from "../components/page-shell";
 import { PronunciationAnnotation } from "../components/pronunciation-annotation";
-import { useSentenceDraft } from "../components/sentence-draft";
+import { useSentenceDraft, type PracticeRecoveryContext } from "../components/sentence-draft";
+import { useAuth } from "../components/auth-provider";
 import { useUserSettings } from "../components/user-settings-provider";
 import { AssessmentError, AssessmentResult, fetchAssessment } from "../lib/assessment";
 import { alignAssessmentWords, practiceFocus } from "../lib/assessment-alignment";
-import { savePracticeRecord, type PracticeRecordDraft } from "../lib/practice-records";
+import { reconcilePracticeRecord, savePracticeRecord, type PracticeRecordDraft } from "../lib/practice-records";
+import {
+  createPracticeRecoverySnapshot,
+  PracticeRecordConflictError,
+  readPracticeRecoverySnapshot,
+  removePracticeRecoverySnapshot,
+  writePracticeRecoverySnapshot,
+} from "../lib/practice-recovery.mjs";
 import { TtsError, fetchDemoAudio } from "../lib/tts";
 
 const rates = [0.6, 0.8, 1, 1.2] as const;
-const discardMessage = "结果未保存，确定离开吗？";
+const discardMessage = "当前评分尚未确认保存，确定离开并保留本地恢复副本吗？";
 
 type PlaybackTarget = "sentence" | "word";
 type PlaybackState = { status: "idle" | "loading" | "playing"; target: PlaybackTarget | null; text: string; error: string };
+type SaveStatus = "idle" | "verifying" | "saving" | "saved" | "failed" | "conflict" | "removed";
+type RecoveryStage = "ready" | "recording" | "assessing" | "score-ready" | "saving" | "failed" | "saved" | "removed";
+type RecoverySnapshot = {
+  version: 1;
+  userId: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  context: PracticeRecoveryContext;
+  stage: RecoveryStage;
+  draft: PracticeRecordDraft | null;
+};
+
+const createRecoverySnapshot = createPracticeRecoverySnapshot as (input: {
+  userId: string;
+  context: PracticeRecoveryContext;
+  stage: RecoveryStage;
+  draft?: PracticeRecordDraft | null;
+  previous?: RecoverySnapshot | null;
+}) => RecoverySnapshot | null;
+
+function getSessionStorage() {
+  try { return window.sessionStorage; } catch { return null; }
+}
+
+function contextWithFocus(context: PracticeRecoveryContext, focus: string | null): PracticeRecoveryContext {
+  return { ...context, focus };
+}
 
 function usePracticeAudio(lang: "es-ES" | "es-MX" | null) {
   const [state, setState] = useState<PlaybackState>({ status: "idle", target: null, text: "", error: "" });
@@ -112,10 +148,12 @@ function DemoPlayer({ sentence, audio, rate, setRate }: {
 
 export default function PracticePage() {
   const router = useRouter();
-  const { explainedSentence, explanation, repeatPractice, recordReturnId, clearLearning } = useSentenceDraft();
+  const { status: authStatus, userId } = useAuth();
+  const { explainedSentence, explanation, repeatPractice, recordReturnId, learningOrigin,
+    practiceContext, restorePracticeContext, clearLearning } = useSentenceDraft();
   const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
   const practiceSentence = repeatPractice?.sentence ?? explainedSentence;
-  const practiceTranslation = repeatPractice?.translation ?? explanation?.translation;
+  const practiceTranslation = repeatPractice?.translation ?? explanation?.translation ?? practiceContext?.translation;
   const canPractice = Boolean(practiceSentence && practiceTranslation);
   const [audioRate, setAudioRate] = useState<number>(1);
   const audio = usePracticeAudio(lang);
@@ -124,13 +162,29 @@ export default function PracticePage() {
   const [toast, setToast] = useState("");
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [saveDraft, setSaveDraft] = useState<PracticeRecordDraft | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [recoveryReady, setRecoveryReady] = useState(false);
+  const [recoveryUserId, setRecoveryUserId] = useState<string | null>(null);
+  const [recoveryNotice, setRecoveryNotice] = useState("");
+  const [snapshotWarning, setSnapshotWarning] = useState("");
   const [selectedWord, setSelectedWord] = useState<{ kind: "reference" | "insertion"; index: number } | null>(null);
-  const [practiceGoal, setPracticeGoal] = useState<string | null>(repeatPractice?.focus ?? null);
+  const [practiceGoal, setPracticeGoal] = useState<string | null>(repeatPractice?.focus ?? practiceContext?.focus ?? null);
   const recording = useRef<{ recorder: MediaRecorder; stream: MediaStream; started: number; chunks: Blob[] } | null>(null);
   const request = useRef<AbortController | null>(null);
   const timer = useRef<number | null>(null);
   const generation = useRef(0);
+  const initializedUser = useRef<string | null>(null);
+  const recoverySnapshot = useRef<RecoverySnapshot | null>(null);
+  const practiceContextRef = useRef(practiceContext);
+  const practiceGoalRef = useRef(practiceGoal);
+  const saveDraftRef = useRef(saveDraft);
+  const userIdRef = useRef(userId);
+  useEffect(() => {
+    practiceContextRef.current = practiceContext;
+    practiceGoalRef.current = practiceGoal;
+    saveDraftRef.current = saveDraft;
+    userIdRef.current = userId;
+  }, [practiceContext, practiceGoal, saveDraft, userId]);
   const resultFocus = result ? practiceFocus(practiceSentence, result.words, {
     overall: result.overall,
     accuracy: result.accuracy,
@@ -139,20 +193,153 @@ export default function PracticePage() {
     speakingRate: result.speakingRate,
   }) : null;
 
+  const persistRecovery = useCallback((stage: RecoveryStage, draft: PracticeRecordDraft | null = saveDraftRef.current,
+    focus = practiceGoalRef.current, context = practiceContextRef.current): boolean => {
+    const activeUserId = userIdRef.current;
+    if (!activeUserId || !context) return false;
+    const snapshot = createRecoverySnapshot({
+      userId: activeUserId,
+      context: contextWithFocus(context, focus),
+      stage,
+      draft,
+      previous: recoverySnapshot.current,
+    });
+    if (!snapshot) {
+      setSnapshotWarning("当前练习无法生成恢复副本；请保持页面打开，直到评分保存完成。");
+      return false;
+    }
+    recoverySnapshot.current = snapshot;
+    const written = writePracticeRecoverySnapshot(getSessionStorage(), snapshot);
+    setSnapshotWarning(written ? "" : "浏览器暂时无法保存刷新恢复副本；当前页面仍会尝试保存评分。");
+    return written;
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (authStatus !== "signed-in" || !userId) {
+      initializedUser.current = null;
+      queueMicrotask(() => {
+        if (!active) return;
+        setRecoveryReady(false);
+        setRecoveryUserId(null);
+      });
+      return () => { active = false; };
+    }
+    const previousUserId = initializedUser.current;
+    initializedUser.current = userId;
+    queueMicrotask(() => {
+      if (!active) return;
+    setRecoveryReady(false);
+    setRecoveryUserId(null);
+    recoverySnapshot.current = null;
+    setResult(null);
+    setSaveDraft(null);
+    setSaveStatus("idle");
+    setPracticeGoal(practiceContextRef.current?.focus ?? null);
+    setRecoveryNotice("");
+    setSnapshotWarning("");
+
+    if (previousUserId && previousUserId !== userId) {
+      setPhase("idle");
+      setToast("");
+    }
+
+    const storage = getSessionStorage();
+    const loaded = readPracticeRecoverySnapshot(storage, userId);
+    const saved = loaded.status === "found" ? loaded.snapshot : null;
+    const currentTask = practiceContextRef.current;
+
+    if (saved && (!currentTask || currentTask.taskId === saved.context.taskId)) {
+      recoverySnapshot.current = saved;
+      if (!currentTask) restorePracticeContext(saved.context);
+      setPracticeGoal(saved.context.focus);
+      if (saved.stage === "recording" || saved.stage === "assessing") {
+        setRecoveryNotice(saved.stage === "recording"
+          ? "刷新中断了录音，请重新录制；录音内容没有保存。"
+          : "评分请求在刷新时中断，结果无法确认；请重新录制，不会自动重评。录音内容没有保存。");
+        const context = currentTask ?? saved.context;
+        const resetSnapshot = createRecoverySnapshot({ userId, context, stage: "ready", previous: saved });
+        if (resetSnapshot) {
+          recoverySnapshot.current = resetSnapshot;
+          writePracticeRecoverySnapshot(storage, resetSnapshot);
+        }
+      } else if (saved.draft) {
+        setResult(saved.draft.result);
+        setSaveDraft(saved.draft);
+        setSaveStatus("verifying");
+        const snapshot = saved;
+        void reconcilePracticeRecord(saved.draft).then((outcome) => {
+          if (initializedUser.current !== userId) return;
+          if (outcome === "saved") {
+            setSaveStatus("saved");
+            persistRecovery("saved", saved.draft, snapshot.context.focus, snapshot.context);
+          } else if (snapshot.stage === "saved" || snapshot.stage === "removed") {
+            setSaveStatus("removed");
+            setRecoveryNotice("这条评分已不在云端记录中；本地恢复副本不会自动重新写回。");
+            persistRecovery("removed", saved.draft, snapshot.context.focus, snapshot.context);
+          } else {
+            setSaveStatus("failed");
+            setRecoveryNotice("尚未找到这条云端评分。评分已保留，可用原记录 ID 安全重试保存。");
+            persistRecovery("failed", saved.draft, snapshot.context.focus, snapshot.context);
+          }
+        }).catch((error) => {
+          if (initializedUser.current !== userId) return;
+          if (error instanceof PracticeRecordConflictError) {
+            setSaveStatus("conflict");
+            setRecoveryNotice("云端已有同 ID 的不同评分。已保留本地结果，不会覆盖云端记录；请先查看云端记录。");
+          } else {
+            setSaveStatus("failed");
+            setRecoveryNotice("暂时无法核对云端保存状态。评分仍在本地恢复副本中，请联网后重试。");
+          }
+        });
+      }
+    } else if (currentTask) {
+      if (saved) removePracticeRecoverySnapshot(storage, userId);
+      const nextSnapshot = createRecoverySnapshot({ userId, context: currentTask, stage: "ready" });
+      recoverySnapshot.current = nextSnapshot;
+      const written = writePracticeRecoverySnapshot(storage, nextSnapshot);
+      if (!written) setSnapshotWarning("浏览器暂时无法保存刷新恢复副本；当前页面仍可正常练习。");
+      if (loaded.status === "expired") setRecoveryNotice("上次任务恢复副本已过期，已开始当前练习任务。");
+      else if (loaded.status === "invalid") setRecoveryNotice("上次恢复副本不可读取，已开始当前练习任务。");
+    } else {
+      recoverySnapshot.current = null;
+      if (loaded.status === "expired") setRecoveryNotice("上次练习恢复副本已过期，请从选句或记录页重新开始。");
+      else if (loaded.status === "invalid") setRecoveryNotice("上次练习恢复副本不可读取，请从选句或记录页重新开始。");
+      else if (loaded.status === "unavailable") setSnapshotWarning("浏览器不允许读取此标签页的恢复数据。");
+    }
+
+    setRecoveryUserId(userId);
+    setRecoveryReady(true);
+    });
+    return () => { active = false; };
+  }, [authStatus, userId, restorePracticeContext, persistRecovery]);
+
   useEffect(() => {
     if (!saveDraft || saveStatus !== "saving") return;
     let active = true;
+    persistRecovery("saving", saveDraft);
     void savePracticeRecord(saveDraft).then(() => {
-      if (active) setSaveStatus("saved");
-    }).catch(() => {
-      if (active) setSaveStatus("failed");
+      if (!active) return;
+      persistRecovery("saved", saveDraft);
+      setSaveStatus("saved");
+      setRecoveryNotice("");
+    }).catch((error) => {
+      if (!active) return;
+      if (error instanceof PracticeRecordConflictError) {
+        persistRecovery("failed", saveDraft);
+        setSaveStatus("conflict");
+        setRecoveryNotice("云端已有同 ID 的不同评分。已保留本地结果，不会覆盖云端记录；请先查看云端记录。");
+      } else {
+        persistRecovery("failed", saveDraft);
+        setSaveStatus("failed");
+      }
     });
     return () => { active = false; };
-  }, [saveDraft, saveStatus]);
+  }, [saveDraft, saveStatus, userId, persistRecovery]);
 
-  const hasUnsavedResult = result !== null && (saveStatus === "saving" || saveStatus === "failed");
-  function confirmDiscard(): boolean {
-    return !hasUnsavedResult || window.confirm(discardMessage);
+  const hasUnsavedResult = result !== null && saveStatus !== "saved" && saveStatus !== "idle";
+  function confirmDiscard(message = discardMessage): boolean {
+    return !hasUnsavedResult || window.confirm(message);
   }
 
   useEffect(() => {
@@ -188,6 +375,7 @@ export default function PracticePage() {
 
   async function startRecording() {
     if (!practiceTranslation || !canPractice || !lang || !confirmDiscard()) return;
+    if (hasUnsavedResult && userId) removePracticeRecoverySnapshot(getSessionStorage(), userId);
     audio.stop();
     const translation = practiceTranslation;
     const assessmentSentence = practiceSentence;
@@ -198,9 +386,11 @@ export default function PracticePage() {
     setSaveDraft(null);
     setSaveStatus("idle");
     setSelectedWord(null);
+    persistRecovery("recording", null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setToast("当前浏览器不支持录音，请换用支持录音的浏览器");
       setPhase("idle");
+      persistRecovery("ready", null);
       return;
     }
     const mimeType = ["audio/webm;codecs=opus", "audio/mp4;codecs=mp4a.40.2", "audio/mp4"]
@@ -208,6 +398,7 @@ export default function PracticePage() {
     if (!mimeType) {
       setToast("当前浏览器不支持所需录音格式");
       setPhase("idle");
+      persistRecovery("ready", null);
       return;
     }
     let stream: MediaStream | null = null;
@@ -233,6 +424,7 @@ export default function PracticePage() {
         timer.current = null;
         setPhase("idle");
         setToast("录音失败，请重试");
+        persistRecovery("ready", null);
       };
       recorder.onstop = () => {
         current.stream.getTracks().forEach((track) => track.stop());
@@ -243,36 +435,46 @@ export default function PracticePage() {
         if (performance.now() - current.started < 1000) {
           setToast("没录到声音，请重试");
           setPhase("idle");
+          persistRecovery("ready", null);
           return;
         }
         const audio = new Blob(current.chunks, { type: recorder.mimeType || mimeType });
         if (!audio.size) {
           setToast("没录到声音，请重试");
           setPhase("idle");
+          persistRecovery("ready", null);
           return;
         }
         if (audio.size > 10 * 1024 * 1024) {
           setToast("录音超过 10MB，请重录");
           setPhase("idle");
+          persistRecovery("ready", null);
           return;
         }
         const controller = new AbortController();
         request.current = controller;
         const timeout = window.setTimeout(() => controller.abort(), 30_000);
         setPhase("assessing");
+        persistRecovery("assessing", null);
         void fetchAssessment(audio, assessmentSentence, controller.signal, lang)
           .then((assessment) => {
             if (currentGeneration === generation.current) {
-              setResult(assessment);
-              setPracticeGoal(practiceFocus(assessmentSentence, assessment.words,
+              const goal = practiceFocus(assessmentSentence, assessment.words,
                 { overall: assessment.overall, accuracy: assessment.accuracy, fluency: assessment.fluency,
-                  completeness: assessment.completeness, speakingRate: assessment.speakingRate }).goal);
-              setSaveDraft({ id: crypto.randomUUID(), sentence: assessmentSentence, translation, result: assessment });
+                  completeness: assessment.completeness, speakingRate: assessment.speakingRate }).goal;
+              const draft = { id: crypto.randomUUID(), sentence: assessmentSentence, translation, result: assessment };
+              persistRecovery("score-ready", draft, goal);
+              setResult(assessment);
+              setPracticeGoal(goal);
+              setSaveDraft(draft);
               setSaveStatus("saving");
             }
           })
           .catch((cause) => {
-            if (currentGeneration === generation.current) setToast(cause instanceof AssessmentError ? cause.message : "评估失败，请重试");
+            if (currentGeneration === generation.current) {
+              persistRecovery("ready", null);
+              setToast(cause instanceof AssessmentError ? cause.message : "评估失败，请重试");
+            }
           })
           .finally(() => {
             window.clearTimeout(timeout);
@@ -292,6 +494,7 @@ export default function PracticePage() {
       setPhase("idle");
       setToast(cause instanceof DOMException && (cause.name === "NotAllowedError" || cause.name === "PermissionDeniedError")
         ? "请开启麦克风权限后重试" : "录音无法开始，请重试");
+      persistRecovery("ready", null);
     }
   }
 
@@ -304,7 +507,8 @@ export default function PracticePage() {
   }
 
   function changeSentence() {
-    if (!confirmDiscard()) return;
+    if (!confirmDiscard("当前评分尚未确认保存。换一句会停止保留这份评分的本地恢复副本，仍要继续吗？")) return;
+    if (userId) removePracticeRecoverySnapshot(getSessionStorage(), userId);
     clearLearning();
     router.push("/");
   }
@@ -324,14 +528,20 @@ export default function PracticePage() {
   </button> : undefined;
 
   return (
-    <PageShell title="跟读练习" backHref={repeatPractice && recordReturnId ? `/records/detail?id=${encodeURIComponent(recordReturnId)}` : "/explanation"} beforeBack={confirmDiscard} action={action}>
+    <PageShell title="跟读练习" backHref={learningOrigin === "records" && recordReturnId ? `/records/detail?id=${encodeURIComponent(recordReturnId)}` : "/explanation"} beforeBack={confirmDiscard} action={action}>
+      {!recoveryReady || recoveryUserId !== userId ? (
+        <p className="supporting-copy" role="status">正在恢复当前练习…</p>
+      ) : (
       <div className="page-stack">
+        {recoveryNotice && <p className="supporting-copy" role="status">{recoveryNotice}</p>}
+        {snapshotWarning && <p className="form-error" role="alert">{snapshotWarning}</p>}
         <section className="section-block">
           <SectionHeading>原句</SectionHeading>
           {canPractice ? (
             <>
               <p className="learning-sentence" lang="es">{practiceSentence}</p>
-              {repeatPractice ? <p className="translation-text">{repeatPractice.translation}</p> : explanation && <PronunciationAnnotation annotation={explanation.annotation} />}
+              {practiceTranslation && <p className="translation-text">{practiceTranslation}</p>}
+              {!repeatPractice && (explanation?.annotation ?? practiceContext?.annotation) && <PronunciationAnnotation annotation={(explanation?.annotation ?? practiceContext?.annotation)!} />}
               {practiceGoal && !result && <p className="practice-goal" role="status"><strong>本次练习目标：</strong>{practiceGoal}</p>}
             </>
           ) : (
@@ -344,9 +554,12 @@ export default function PracticePage() {
         {phase === "assessing" && <p className="assessment-status" role="status">正在评估朗读…</p>}
         {result && <section className={`section-block assessment-result${result.overall === 100 ? " assessment-perfect" : ""}`} aria-label="评分结果">
           <SectionHeading>评分结果</SectionHeading>
+          {saveStatus === "verifying" && <p className="record-save-status" role="status">正在核对云端保存状态…</p>}
           {saveStatus === "saving" && <p className="record-save-status" role="status">保存中…</p>}
-          {saveStatus === "saved" && <p className="record-save-status" role="status">已保存到练习记录</p>}
+          {saveStatus === "saved" && <p className="record-save-status" role="status">已保存到练习记录 · <Link className="inline-link" href={`/records/detail?id=${encodeURIComponent(saveDraft?.id ?? "")}`}>查看记录</Link></p>}
           {saveStatus === "failed" && <p className="record-save-status" role="alert">保存失败，评分结果仍在本页。<button type="button" className="inline-retry" onClick={() => setSaveStatus("saving")}>重试保存</button></p>}
+          {saveStatus === "conflict" && <p className="record-save-status" role="alert">{recoveryNotice || "云端已有同 ID 的不同评分，本地结果未覆盖云端记录。"} {saveDraft && <Link className="inline-link" href={`/records/detail?id=${encodeURIComponent(saveDraft.id)}`}>查看云端记录</Link>}</p>}
+          {saveStatus === "removed" && <p className="record-save-status" role="alert">{recoveryNotice || "云端没有找到这条已保存评分；本地副本不会自动重新写入。"}</p>}
           <div className="assessment-overall"><strong>{Math.round(result.overall)}</strong><span>总分 / 100</span></div>
           <div className="assessment-dimensions">
             {([ ["准确度", result.accuracy], ["流利度", result.fluency], ["完整度", result.completeness] ] as const).map(([label, value]) => (
@@ -398,6 +611,7 @@ export default function PracticePage() {
           <div className="result-actions"><button type="button" className="secondary-button" onClick={() => void startRecording()}>再读一次</button><button type="button" className="plain-button" onClick={changeSentence}>换一句</button></div>
         </section>}
       </div>
+      )}
       {toast && <div className="query-toast" role="alert">{toast}<button type="button" onClick={() => setToast("")}>关闭</button></div>}
     </PageShell>
   );

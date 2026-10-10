@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "../lib/supabase";
+import { removePracticeRecoverySnapshot } from "../lib/practice-recovery.mjs";
 import { PageShell } from "./page-shell";
 import { useSentenceDraft } from "./sentence-draft";
 
@@ -22,7 +23,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const lastUserId = useRef<string | null>(null);
 
   const acceptUser = useCallback((nextUserId: string | null) => {
-    if (lastUserId.current !== nextUserId && lastUserId.current !== null) clearLearning();
+    if (lastUserId.current !== nextUserId && lastUserId.current !== null) {
+      if (typeof window !== "undefined") {
+        try { removePracticeRecoverySnapshot(window.sessionStorage, lastUserId.current); } catch { /* Storage can be blocked by browser policy. */ }
+      }
+      clearLearning();
+    }
     lastUserId.current = nextUserId;
     setUserId(nextUserId);
     setStatus(nextUserId ? "signed-in" : "signed-out");
