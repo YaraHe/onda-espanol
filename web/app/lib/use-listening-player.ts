@@ -9,6 +9,7 @@ import { TtsError, fetchDemoAudio } from "./tts";
 type Phase = "idle" | "loading" | "playing" | "gap" | "paused";
 type Mode = "loop" | "focus";
 type Target = { entry: ListeningSentence; index: number; mode: Mode };
+type IntentAction = "play" | "pause" | "replace" | "retry";
 type Playback = {
   generation: number;
   phase: Phase;
@@ -77,6 +78,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     current.audio = null;
     current.target = null;
     current.phase = "idle";
+    // Keep shouldPlay intact so a retry cannot silently turn a paused request into playback.
     setPhase("idle");
     setActiveKey(null);
     setRetryTarget(target);
@@ -84,15 +86,14 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     if (target.mode === "focus") setFocusKey(target.entry.key);
   }, [clearPending, releaseSource]);
 
-  const playItem = useCallback(async function playItem(target: Target, autoplay: boolean | "preserve" = true) {
+  const playItem = useCallback(async function playItem(target: Target, intent: IntentAction = "play") {
     const current = playback.current;
     current.generation += 1;
     const generation = current.generation;
     clearPending();
     releaseSource();
     current.target = target;
-    const requestIntent = autoplay === "preserve" ? "replace" : autoplay ? "play" : "pause";
-    current.shouldPlay = transitionPlaybackIntent(current.shouldPlay, requestIntent);
+    current.shouldPlay = transitionPlaybackIntent(current.shouldPlay, intent);
     current.phase = "loading";
     setPhase("loading");
     setActiveKey(target.entry.key);
@@ -169,7 +170,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     const current = playback.current;
     if (current.phase !== "paused" || !current.target) return;
     const target = current.target;
-    if (!current.audio?.src) { await playItem(target, true); return; }
+    if (!current.audio?.src) { await playItem(target, "play"); return; }
     current.shouldPlay = transitionPlaybackIntent(current.shouldPlay, "play");
     const generation = current.generation;
     current.phase = "loading";
@@ -213,13 +214,13 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     if (!focusTarget.current) return;
     const target: Target = { entry, index, mode: "focus" };
     focusTarget.current = target;
-    void playItem(target, "preserve");
+    void playItem(target, "replace");
   }, [playItem]);
 
   const regenerateFocus = useCallback(() => {
     const target = focusTarget.current;
     if (!target || !options.current.lang) return;
-    void playItem(target, "preserve");
+    void playItem(target, "replace");
   }, [playItem]);
 
   const endFocus = useCallback(() => {
@@ -244,7 +245,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
       focusTarget.current = retryTarget;
       setFocusKey(retryTarget.entry.key);
     }
-    void playItem(retryTarget);
+    void playItem(retryTarget, "retry");
   }, [playItem, retryTarget]);
 
   useEffect(() => { stop(); }, [playlist, stop]);

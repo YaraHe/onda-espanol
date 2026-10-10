@@ -63,6 +63,17 @@ test("focus replacement preserves explicit intent across repeated loading reques
   assert.equal(shouldPlay, false);
 });
 
+test("retry preserves the last explicit play or pause intent after a load failure", () => {
+  let shouldPlay = transitionPlaybackIntent(false, "pause");
+  // A failed replacement ends the request, but does not change the user's intent.
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  assert.equal(transitionPlaybackIntent(shouldPlay, "retry"), false);
+
+  shouldPlay = transitionPlaybackIntent(true, "play");
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  assert.equal(transitionPlaybackIntent(shouldPlay, "retry"), true);
+});
+
 test("Stage 4 playback uses only saved personal IDs and excludes removed or legacy references", () => {
   const saved = [
     { id: "own-a", sentence: "Hola, Ana.", translation: "你好，安娜。" },
