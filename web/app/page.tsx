@@ -9,7 +9,7 @@ import { SentenceEntry } from "./components/sentence-entry";
 import { useSentenceDraft } from "./components/sentence-draft";
 import { useUserSettings } from "./components/user-settings-provider";
 import { ExplainError, fetchExplanation } from "./lib/explanation";
-import { listPracticeRecords, recentSentences } from "./lib/practice-records";
+import { listRecentPracticeSentences } from "./lib/practice-records";
 
 export default function SelectPage() {
   const router = useRouter();
@@ -26,9 +26,9 @@ export default function SelectPage() {
   useEffect(() => {
     let active = true;
     if (!userId) return () => { active = false; };
-    void listPracticeRecords().then((records) => {
+    void listRecentPracticeSentences().then((sentences) => {
       if (active) {
-        setRecent(recentSentences(records));
+        setRecent(sentences);
         setRecentUserId(userId);
         setRecentStatus("ready");
       }
@@ -39,7 +39,7 @@ export default function SelectPage() {
   async function reloadRecent() {
     setRecentStatus("loading");
     try {
-      setRecent(recentSentences(await listPracticeRecords()));
+      setRecent(await listRecentPracticeSentences());
       setRecentUserId(userId);
       setRecentStatus("ready");
     } catch {

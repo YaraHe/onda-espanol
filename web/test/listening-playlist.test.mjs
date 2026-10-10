@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { makeListeningPlaylist, makeListeningPool, makePersonalListeningPool, nextListeningIndex, relativeListeningIndex, validCustomSelection } from "../app/lib/listening-playlist.ts";
-import { shouldAutoplayFocusRequest } from "../app/lib/listening-playback-state.mjs";
+import { transitionPlaybackIntent } from "../app/lib/listening-playback-state.mjs";
 
 const library = [
   { id: "one", sentence: "Hola, Ana.", translation: "你好，安娜。" },
@@ -46,12 +46,21 @@ test("single-sentence focus navigation wraps in both directions and handles an e
   assert.equal(relativeListeningIndex(0, 0, -1), 0);
 });
 
-test("focus sentence changes and rate regeneration preserve explicit pause intent", () => {
-  assert.equal(shouldAutoplayFocusRequest("paused"), false);
-  assert.equal(shouldAutoplayFocusRequest("playing"), true);
-  assert.equal(shouldAutoplayFocusRequest("loading"), true);
-  assert.equal(shouldAutoplayFocusRequest("gap"), true);
-  assert.equal(shouldAutoplayFocusRequest("idle"), false);
+test("focus replacement preserves explicit intent across repeated loading requests", () => {
+  let shouldPlay = false;
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  assert.equal(shouldPlay, false);
+
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "play");
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  assert.equal(shouldPlay, true);
+
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "pause");
+  shouldPlay = transitionPlaybackIntent(shouldPlay, "replace");
+  assert.equal(shouldPlay, false);
 });
 
 test("Stage 4 playback uses only saved personal IDs and excludes removed or legacy references", () => {

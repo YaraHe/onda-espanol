@@ -1,6 +1,7 @@
 import type { AssessmentResult } from "./assessment";
 import { getSupabaseClient } from "./supabase";
-import { latestUniqueSentenceRecords, matchingSentenceRecords } from "./sentence-identity.mjs";
+import { matchingSentenceRecords } from "./sentence-identity.mjs";
+import { collectRecentUniqueSentences } from "./recent-practice.mjs";
 
 export type PracticeRecordDraft = {
   id: string;
@@ -16,6 +17,8 @@ export type PracticeRecordSummary = {
   overall: number | null;
   created_at: string | null;
 };
+
+type RecentPracticeSentence = Pick<PracticeRecordSummary, "id" | "sentence">;
 
 export type PracticeRecordAttempt = PracticeRecordSummary & {
   accuracy: number | null;
@@ -57,13 +60,20 @@ export async function savePracticeRecord(draft: PracticeRecordDraft): Promise<vo
   if (error) throw new Error("保存失败，请检查网络后重试");
 }
 
-export async function listPracticeRecords(): Promise<PracticeRecordSummary[]> {
-  const { data, error } = await getSupabaseClient().from("practice_records")
-    .select("id,sentence,translation,overall,created_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
-  if (error) throw new Error("练习记录加载失败，请重试");
-  return (data ?? []) as PracticeRecordSummary[];
+export async function listRecentPracticeSentences(): Promise<string[]> {
+  const client = getSupabaseClient();
+  const userId = await currentUserId();
+  const records = await collectRecentUniqueSentences(async (offset, pageSize) => {
+    const { data, error } = await client.from("practice_records")
+      .select("id,sentence,created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error("练习记录加载失败，请重试");
+    return (data ?? []) as RecentPracticeSentence[];
+  });
+  return records.map((record) => record.sentence);
 }
 
 export async function listAllPracticeRecords(): Promise<PracticeRecordSummary[]> {
@@ -123,8 +133,4 @@ export async function clearPracticeRecords(): Promise<number> {
     .eq("user_id", userId);
   if (error) throw new Error("清除练习记录失败，请检查网络后重试");
   return count ?? 0;
-}
-
-export function recentSentences(records: PracticeRecordSummary[]): string[] {
-  return latestUniqueSentenceRecords(records).slice(0, 5).map((record) => record.sentence);
 }

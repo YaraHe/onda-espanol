@@ -174,7 +174,7 @@ export default function ListeningPage() {
             {preferences.showTranslation && <p className="listening-translation">{pool.find((item) => item.key === (player.focusKey ?? player.activeKey))?.translation || "暂无翻译"}</p>}
             <p className="field-note">{player.isFocusing ? (player.phase === "paused" ? "精听已暂停" : player.phase === "loading" ? "正在准备精听音频…" : player.phase === "idle" ? "精听未开始" : "单句循环播放中") : statusText}</p>
             {player.isFocusing ? <div className="listening-task-controls listening-focus-controls" aria-label="单句精听控制">
-              <button type="button" className="secondary-button" disabled={player.phase === "loading" || player.phase === "idle"} onClick={() => player.phase === "paused" ? void player.resume() : player.pause()}>{player.phase === "paused" ? "继续精听" : "暂停精听"}</button>
+              <button type="button" className="secondary-button" disabled={player.phase === "idle"} onClick={() => player.phase === "paused" ? void player.resume() : player.pause()}>{player.phase === "paused" ? "继续精听" : "暂停精听"}</button>
               <button type="button" className="secondary-button" disabled={playlist.length < 2} onClick={() => {
                 const currentIndex = playlist.findIndex((item) => item.key === player.focusKey);
                 const next = playlist[relativeListeningIndex(currentIndex, playlist.length, -1)];

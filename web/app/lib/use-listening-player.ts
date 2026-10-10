@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nextListeningIndex, type ListeningSentence } from "./listening-playlist";
 import { releaseAudioSource } from "./release-audio-source.mjs";
-import { shouldAutoplayFocusRequest } from "./listening-playback-state.mjs";
+import { transitionPlaybackIntent } from "./listening-playback-state.mjs";
 import { TtsError, fetchDemoAudio } from "./tts";
 
 type Phase = "idle" | "loading" | "playing" | "gap" | "paused";
@@ -12,6 +12,7 @@ type Target = { entry: ListeningSentence; index: number; mode: Mode };
 type Playback = {
   generation: number;
   phase: Phase;
+  shouldPlay: boolean;
   target: Target | null;
   controller: AbortController | null;
   requestTimeout: number | null;
@@ -30,7 +31,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
   const focusTarget = useRef<Target | null>(null);
   const focusRestore = useRef<{ target: Target; wasStarted: boolean } | null>(null);
   const playback = useRef<Playback>({
-    generation: 0, phase: "idle", target: null, controller: null,
+    generation: 0, phase: "idle", shouldPlay: false, target: null, controller: null,
     requestTimeout: null, gapTimer: null, audio: null, url: null,
   });
 
@@ -60,6 +61,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     current.audio = null;
     current.target = null;
     current.phase = "idle";
+    current.shouldPlay = false;
     focusTarget.current = null;
     focusRestore.current = null;
     if (updateState) {
@@ -82,13 +84,15 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     if (target.mode === "focus") setFocusKey(target.entry.key);
   }, [clearPending, releaseSource]);
 
-  const playItem = useCallback(async function playItem(target: Target, autoplay = true) {
+  const playItem = useCallback(async function playItem(target: Target, autoplay: boolean | "preserve" = true) {
     const current = playback.current;
     current.generation += 1;
     const generation = current.generation;
     clearPending();
     releaseSource();
     current.target = target;
+    const requestIntent = autoplay === "preserve" ? "replace" : autoplay ? "play" : "pause";
+    current.shouldPlay = transitionPlaybackIntent(current.shouldPlay, requestIntent);
     current.phase = "loading";
     setPhase("loading");
     setActiveKey(target.entry.key);
@@ -112,7 +116,11 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
         if (generation !== current.generation || current.phase !== "playing") return;
         if (target.mode === "focus") {
           audio.currentTime = 0;
-          void audio.play().catch(() => fail(target, "音频无法继续播放，请重试"));
+          void audio.play().catch(() => {
+            if (generation === current.generation && current.phase === "playing" && current.shouldPlay) {
+              fail(target, "音频无法继续播放，请重试");
+            }
+          });
           return;
         }
         releaseSource();
@@ -130,7 +138,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
         }, options.current.intervalSeconds * 1000);
       };
       audio.onerror = () => { if (generation === current.generation) fail(target, "音频无法播放，请重试"); };
-      if (!autoplay) {
+      if (!current.shouldPlay) {
         current.phase = "paused";
         setPhase("paused");
         return;
@@ -146,6 +154,7 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
   const pause = useCallback(() => {
     const current = playback.current;
     if (current.phase !== "loading" && current.phase !== "playing" && current.phase !== "gap") return;
+    current.shouldPlay = transitionPlaybackIntent(current.shouldPlay, "pause");
     if (current.phase === "playing") current.audio?.pause();
     else {
       current.generation += 1;
@@ -160,14 +169,21 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     const current = playback.current;
     if (current.phase !== "paused" || !current.target) return;
     const target = current.target;
-    if (!current.audio?.src) { await playItem(target); return; }
+    if (!current.audio?.src) { await playItem(target, true); return; }
+    current.shouldPlay = transitionPlaybackIntent(current.shouldPlay, "play");
     const generation = current.generation;
+    current.phase = "loading";
+    setPhase("loading");
     try {
       await current.audio.play();
-      if (generation !== current.generation || current.phase !== "paused") return;
+      if (generation !== current.generation || !current.shouldPlay || current.phase !== "loading") return;
       current.phase = "playing";
       setPhase("playing");
-    } catch { if (generation === current.generation) fail(target, "音频无法播放，请重试"); }
+    } catch {
+      if (generation === current.generation && current.shouldPlay && current.phase === "loading") {
+        fail(target, "音频无法播放，请重试");
+      }
+    }
   }, [fail, playItem]);
 
   const startLoop = useCallback(() => {
@@ -197,13 +213,13 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     if (!focusTarget.current) return;
     const target: Target = { entry, index, mode: "focus" };
     focusTarget.current = target;
-    void playItem(target, shouldAutoplayFocusRequest(playback.current.phase));
+    void playItem(target, "preserve");
   }, [playItem]);
 
   const regenerateFocus = useCallback(() => {
     const target = focusTarget.current;
     if (!target || !options.current.lang) return;
-    void playItem(target, shouldAutoplayFocusRequest(playback.current.phase));
+    void playItem(target, "preserve");
   }, [playItem]);
 
   const endFocus = useCallback(() => {
