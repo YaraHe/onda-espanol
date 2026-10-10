@@ -1,6 +1,6 @@
 import type { AssessmentResult } from "./assessment";
 import { getSupabaseClient } from "./supabase";
-import { matchingSentenceRecords } from "./sentence-identity.mjs";
+import { latestUniqueSentenceRecords, matchingSentenceRecords } from "./sentence-identity.mjs";
 
 export type PracticeRecordDraft = {
   id: string;
@@ -126,5 +126,5 @@ export async function clearPracticeRecords(): Promise<number> {
 }
 
 export function recentSentences(records: PracticeRecordSummary[]): string[] {
-  return [...new Set(records.map((record) => record.sentence))].slice(0, 5);
+  return latestUniqueSentenceRecords(records).slice(0, 5).map((record) => record.sentence);
 }

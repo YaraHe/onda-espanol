@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { makeListeningPlaylist, makeListeningPool, makePersonalListeningPool, nextListeningIndex, relativeListeningIndex, validCustomSelection } from "../app/lib/listening-playlist.ts";
+import { shouldAutoplayFocusRequest } from "../app/lib/listening-playback-state.mjs";
 
 const library = [
   { id: "one", sentence: "Hola, Ana.", translation: "你好，安娜。" },
@@ -43,6 +44,14 @@ test("single-sentence focus navigation wraps in both directions and handles an e
   assert.equal(relativeListeningIndex(1, 3, -1), 0);
   assert.equal(relativeListeningIndex(1, 3, 1), 2);
   assert.equal(relativeListeningIndex(0, 0, -1), 0);
+});
+
+test("focus sentence changes and rate regeneration preserve explicit pause intent", () => {
+  assert.equal(shouldAutoplayFocusRequest("paused"), false);
+  assert.equal(shouldAutoplayFocusRequest("playing"), true);
+  assert.equal(shouldAutoplayFocusRequest("loading"), true);
+  assert.equal(shouldAutoplayFocusRequest("gap"), true);
+  assert.equal(shouldAutoplayFocusRequest("idle"), false);
 });
 
 test("Stage 4 playback uses only saved personal IDs and excludes removed or legacy references", () => {

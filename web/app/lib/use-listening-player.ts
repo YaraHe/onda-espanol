@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nextListeningIndex, type ListeningSentence } from "./listening-playlist";
 import { releaseAudioSource } from "./release-audio-source.mjs";
+import { shouldAutoplayFocusRequest } from "./listening-playback-state.mjs";
 import { TtsError, fetchDemoAudio } from "./tts";
 
 type Phase = "idle" | "loading" | "playing" | "gap" | "paused";
@@ -196,13 +197,13 @@ export function useListeningPlayer(playlist: ListeningSentence[], rate: number, 
     if (!focusTarget.current) return;
     const target: Target = { entry, index, mode: "focus" };
     focusTarget.current = target;
-    void playItem(target, playback.current.phase === "paused");
+    void playItem(target, shouldAutoplayFocusRequest(playback.current.phase));
   }, [playItem]);
 
   const regenerateFocus = useCallback(() => {
     const target = focusTarget.current;
     if (!target || !options.current.lang) return;
-    void playItem(target, playback.current.phase === "paused");
+    void playItem(target, shouldAutoplayFocusRequest(playback.current.phase));
   }, [playItem]);
 
   const endFocus = useCallback(() => {

@@ -20,3 +20,27 @@ test("records without a valid timestamp remain accessible", () => {
   assert.equal(groups[0].date, "时间未知");
   assert.deepEqual(groupLatestRecordsByDate([]), []);
 });
+
+test("record list deduplicates the same canonical sentence like record detail history", async () => {
+  const { matchingSentenceRecords } = await import("../app/lib/sentence-identity.mjs");
+  const records = [
+    { id: "latest", sentence: "  Hola,   ANA. ", overall: 91, created_at: "2026-10-06T08:00:00Z" },
+    { id: "older", sentence: "hola, ana.", overall: 72, created_at: "2026-10-05T08:00:00Z" },
+    { id: "different", sentence: "Hola Ana.", overall: 80, created_at: "2026-10-04T08:00:00Z" },
+  ];
+
+  const listIds = groupLatestRecordsByDate(records).flatMap((group) => group.records.map((record) => record.id));
+  const detailHistoryIds = matchingSentenceRecords(records, "Hola, Ana.").map((record) => record.id);
+
+  assert.deepEqual(listIds, ["latest", "different"]);
+  assert.deepEqual(detailHistoryIds, ["latest", "older"]);
+  assert.ok(listIds.includes(detailHistoryIds[0]));
+});
+
+test("blank legacy records do not collapse into one sentence group", () => {
+  const groups = groupLatestRecordsByDate([
+    { id: "blank-a", sentence: " ", overall: null, created_at: null },
+    { id: "blank-b", sentence: "", overall: null, created_at: null },
+  ]);
+  assert.deepEqual(groups.flatMap((group) => group.records.map((record) => record.id)), ["blank-a", "blank-b"]);
+});

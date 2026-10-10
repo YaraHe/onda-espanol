@@ -1,3 +1,5 @@
+import { latestUniqueSentenceRecords } from "./sentence-identity.mjs";
+
 export type RecordListItem = {
   id: string;
   sentence: string;
@@ -8,12 +10,8 @@ export type RecordListItem = {
 export type RecordDateGroup<T extends RecordListItem> = { date: string; records: T[] };
 
 export function groupLatestRecordsByDate<T extends RecordListItem>(records: T[]): RecordDateGroup<T>[] {
-  const latest = new Map<string, T>();
-  for (const record of records) {
-    if (!latest.has(record.sentence)) latest.set(record.sentence, record);
-  }
   const groups = new Map<string, T[]>();
-  for (const record of latest.values()) {
+  for (const record of latestUniqueSentenceRecords(records)) {
     const parsed = record.created_at ? new Date(record.created_at) : null;
     const date = parsed && !Number.isNaN(parsed.getTime())
       ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" }).format(parsed)
