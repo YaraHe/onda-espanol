@@ -16,20 +16,39 @@ function validAssessment(value) {
     && Array.isArray(value.suggestions) && value.suggestions.every((item) => typeof item === "string");
 }
 
-function validContext(context) {
-  return Boolean(context && typeof context === "object"
+function normalizedAnnotation(annotation) {
+  if (annotation == null) return null;
+  const record = (value, keys) => value && typeof value === "object"
+    && keys.every((key) => typeof value[key] === "string" && value[key].length <= 500);
+  if (!annotation || typeof annotation !== "object"
+    || !Array.isArray(annotation.stress) || !annotation.stress.every((item) => record(item, ["word", "syllable", "display"]))
+    || !Array.isArray(annotation.liaison) || !annotation.liaison.every((item) => record(item, ["words", "pronounced", "note"]))
+    || !Array.isArray(annotation.pauses) || !annotation.pauses.every((item) => record(item, ["after", "type"]))
+    || typeof annotation.pitchPattern !== "string" || annotation.pitchPattern.length > 2_000) return null;
+  return {
+    stress: annotation.stress.map(({ word, syllable, display }) => ({ word, syllable, display })),
+    liaison: annotation.liaison.map(({ words, pronounced, note }) => ({ words, pronounced, note })),
+    pauses: annotation.pauses.map(({ after, type }) => ({ after, type })),
+    pitchPattern: annotation.pitchPattern,
+  };
+}
+
+function normalizeContext(context) {
+  if (!(context && typeof context === "object"
     && typeof context.taskId === "string" && context.taskId.length > 0
     && typeof context.sentence === "string" && context.sentence.trim().length > 0 && context.sentence.length <= 200
     && typeof context.translation === "string" && context.translation.length <= 2_000
     && (context.origin === "select" || context.origin === "records")
     && (context.recordReturnId === null || typeof context.recordReturnId === "string")
     && (context.focus === null || (typeof context.focus === "string" && context.focus.length <= 500))
-    && typeof context.repeatPractice === "boolean");
+    && typeof context.repeatPractice === "boolean")) return null;
+  return { ...context, annotation: normalizedAnnotation(context.annotation) };
 }
 
-function validDraft(draft, context) {
+function validDraft(draft, context, userId, allowLegacyOwner = false) {
   return Boolean(draft && typeof draft === "object"
     && typeof draft.id === "string" && draft.id.length > 0
+    && (draft.ownerUserId === userId || (allowLegacyOwner && draft.ownerUserId === undefined))
     && draft.sentence === context.sentence && draft.translation === context.translation
     && validAssessment(draft.result));
 }
@@ -39,19 +58,20 @@ export function practiceRecoveryKey(userId) {
 }
 
 export function createPracticeRecoverySnapshot({ userId, context, stage, draft = null, now = Date.now(), previous = null }) {
-  if (typeof userId !== "string" || !userId || !validContext(context)) return null;
+  const safeContext = normalizeContext(context);
+  if (typeof userId !== "string" || !userId || !safeContext) return null;
   if (!["ready", "recording", "assessing", "score-ready", "saving", "failed", "saved", "removed"].includes(stage)) return null;
   if ((stage === "score-ready" || stage === "saving" || stage === "failed" || stage === "saved" || stage === "removed")
-    && !validDraft(draft, context)) return null;
+    && !validDraft(draft, safeContext, userId)) return null;
 
-  const sameTask = previous?.version === 1 && previous.userId === userId && previous.context?.taskId === context.taskId;
+  const sameTask = previous?.version === 1 && previous.userId === userId && previous.context?.taskId === safeContext.taskId;
   return {
     version: 1,
     userId,
     createdAt: sameTask ? previous.createdAt : now,
     updatedAt: now,
     expiresAt: sameTask ? previous.expiresAt : now + PRACTICE_RECOVERY_TTL_MS,
-    context,
+    context: safeContext,
     stage,
     draft,
   };
@@ -101,18 +121,26 @@ export function readPracticeRecoverySnapshot(storage, userId, now = Date.now()) 
     return { status: "invalid" };
   }
 
-  if (snapshot?.version !== 1 || snapshot.userId !== userId || !validContext(snapshot.context)
+  const safeContext = normalizeContext(snapshot?.context);
+  if (snapshot?.version !== 1 || snapshot.userId !== userId || !safeContext
     || !["ready", "recording", "assessing", "score-ready", "saving", "failed", "saved", "removed"].includes(snapshot.stage)
     || !Number.isFinite(snapshot.createdAt) || !Number.isFinite(snapshot.updatedAt)
     || !Number.isFinite(snapshot.expiresAt) || snapshot.expiresAt <= now
     || snapshot.expiresAt <= snapshot.createdAt
     || snapshot.expiresAt - snapshot.createdAt > PRACTICE_RECOVERY_TTL_MS
     || ((snapshot.stage === "score-ready" || snapshot.stage === "saving" || snapshot.stage === "failed" || snapshot.stage === "saved" || snapshot.stage === "removed")
-      && !validDraft(snapshot.draft, snapshot.context))) {
+      && !validDraft(snapshot.draft, safeContext, userId, true))) {
     try { storage.removeItem(key); } catch {}
     return { status: snapshot?.expiresAt <= now ? "expired" : "invalid" };
   }
-  return { status: "found", snapshot };
+  return {
+    status: "found",
+    snapshot: {
+      ...snapshot,
+      context: safeContext,
+      draft: snapshot.draft ? { ...snapshot.draft, ownerUserId: userId } : null,
+    },
+  };
 }
 
 export function removePracticeRecoverySnapshot(storage, userId) {
@@ -156,6 +184,47 @@ export class PracticeRecordConflictError extends Error {
     this.name = "PracticeRecordConflictError";
     this.code = "RECORD_CONFLICT";
   }
+}
+
+export class PracticeRecordOwnerError extends Error {
+  constructor() {
+    super("登录账号已变化，未保存其他账号的练习评分。请确认当前账号后重试。");
+    this.name = "PracticeRecordOwnerError";
+    this.code = "OWNER_CHANGED";
+  }
+}
+
+function persistedCandidate(draft, ownerUserId) {
+  return {
+    id: draft.id,
+    user_id: ownerUserId,
+    sentence: draft.sentence,
+    translation: draft.translation,
+    overall: draft.result.overall,
+    accuracy: draft.result.accuracy,
+    fluency: draft.result.fluency,
+    completeness: draft.result.completeness,
+    speaking_rate: draft.result.speakingRate.wpm,
+    raw_feedback: draft.result.words,
+  };
+}
+
+/** Execute the same owner check and insert/reconcile path used by the browser save. */
+export async function savePracticeRecordForOwner({ draft, expectedUserId, getCurrentUserId, find, insert }) {
+  if (!expectedUserId || draft?.ownerUserId !== expectedUserId || await getCurrentUserId() !== expectedUserId) {
+    throw new PracticeRecordOwnerError();
+  }
+  const candidate = persistedCandidate(draft, expectedUserId);
+  return insertAndVerifyPracticeRecord({
+    candidate,
+    find: async (id) => {
+      const result = await find(id, expectedUserId);
+      if (result.error) return result;
+      if (await getCurrentUserId() !== expectedUserId) throw new PracticeRecordOwnerError();
+      return result;
+    },
+    insert,
+  });
 }
 
 /**

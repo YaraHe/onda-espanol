@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "../components/icons";
@@ -118,7 +118,7 @@ function usePracticeAudio(lang: "es-ES" | "es-MX" | null) {
     }
   }, [lang, stop]);
 
-  return { ...state, play, stop: () => stop() };
+  return { ...state, play, stop };
 }
 
 function DemoPlayer({ sentence, audio, rate, setRate }: {
@@ -152,11 +152,9 @@ export default function PracticePage() {
   const { explainedSentence, explanation, repeatPractice, recordReturnId, learningOrigin,
     practiceContext, restorePracticeContext, clearLearning } = useSentenceDraft();
   const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
-  const practiceSentence = repeatPractice?.sentence ?? explainedSentence;
-  const practiceTranslation = repeatPractice?.translation ?? explanation?.translation ?? practiceContext?.translation;
-  const canPractice = Boolean(practiceSentence && practiceTranslation);
   const [audioRate, setAudioRate] = useState<number>(1);
   const audio = usePracticeAudio(lang);
+  const stopPracticeAudio = audio.stop;
   const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "assessing">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [toast, setToast] = useState("");
@@ -165,6 +163,7 @@ export default function PracticePage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [recoveryReady, setRecoveryReady] = useState(false);
   const [recoveryUserId, setRecoveryUserId] = useState<string | null>(null);
+  const [practiceOwnerUserId, setPracticeOwnerUserId] = useState<string | null>(null);
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const [snapshotWarning, setSnapshotWarning] = useState("");
   const [selectedWord, setSelectedWord] = useState<{ kind: "reference" | "insertion"; index: number } | null>(null);
@@ -174,17 +173,24 @@ export default function PracticePage() {
   const timer = useRef<number | null>(null);
   const generation = useRef(0);
   const initializedUser = useRef<string | null>(null);
+  const activeTaskOwner = useRef<string | null>(null);
   const recoverySnapshot = useRef<RecoverySnapshot | null>(null);
   const practiceContextRef = useRef(practiceContext);
   const practiceGoalRef = useRef(practiceGoal);
   const saveDraftRef = useRef(saveDraft);
   const userIdRef = useRef(userId);
-  useEffect(() => {
+  useLayoutEffect(() => {
     practiceContextRef.current = practiceContext;
     practiceGoalRef.current = practiceGoal;
     saveDraftRef.current = saveDraft;
     userIdRef.current = userId;
   }, [practiceContext, practiceGoal, saveDraft, userId]);
+  const practiceSessionOwned = recoveryReady && recoveryUserId === userId && practiceOwnerUserId === userId;
+  const practiceSentence = practiceSessionOwned ? (repeatPractice?.sentence ?? explainedSentence) : "";
+  const practiceTranslation = practiceSessionOwned
+    ? (repeatPractice?.translation ?? explanation?.translation ?? practiceContext?.translation)
+    : undefined;
+  const canPractice = Boolean(practiceSentence && practiceTranslation);
   const resultFocus = result ? practiceFocus(practiceSentence, result.words, {
     overall: result.overall,
     accuracy: result.accuracy,
@@ -196,7 +202,8 @@ export default function PracticePage() {
   const persistRecovery = useCallback((stage: RecoveryStage, draft: PracticeRecordDraft | null = saveDraftRef.current,
     focus = practiceGoalRef.current, context = practiceContextRef.current): boolean => {
     const activeUserId = userIdRef.current;
-    if (!activeUserId || !context) return false;
+    if (!activeUserId || activeTaskOwner.current !== activeUserId || !context
+      || (draft && draft.ownerUserId !== activeUserId)) return false;
     const snapshot = createRecoverySnapshot({
       userId: activeUserId,
       context: contextWithFocus(context, focus),
@@ -216,16 +223,45 @@ export default function PracticePage() {
 
   useEffect(() => {
     let active = true;
+    const previousUserId = initializedUser.current;
+    const nextUserId = authStatus === "signed-in" ? userId : null;
+    const accountChanged = previousUserId !== null && previousUserId !== nextUserId;
+    if (accountChanged) {
+      generation.current += 1;
+      request.current?.abort();
+      request.current = null;
+      const activeRecording = recording.current;
+      recording.current = null;
+      if (activeRecording) {
+        activeRecording.recorder.onstop = null;
+        activeRecording.recorder.onerror = null;
+        if (activeRecording.recorder.state !== "inactive") activeRecording.recorder.stop();
+        activeRecording.stream.getTracks().forEach((track) => track.stop());
+      }
+      if (timer.current !== null) window.clearInterval(timer.current);
+      timer.current = null;
+      stopPracticeAudio();
+      activeTaskOwner.current = null;
+      setPracticeOwnerUserId(null);
+      recoverySnapshot.current = null;
+      setPhase("idle");
+      setResult(null);
+      setSaveDraft(null);
+      setSaveStatus("idle");
+      setSelectedWord(null);
+      setToast("");
+    }
     if (authStatus !== "signed-in" || !userId) {
       initializedUser.current = null;
+      activeTaskOwner.current = null;
       queueMicrotask(() => {
         if (!active) return;
+        setPracticeOwnerUserId(null);
         setRecoveryReady(false);
         setRecoveryUserId(null);
       });
       return () => { active = false; };
     }
-    const previousUserId = initializedUser.current;
     initializedUser.current = userId;
     queueMicrotask(() => {
       if (!active) return;
@@ -247,10 +283,12 @@ export default function PracticePage() {
     const storage = getSessionStorage();
     const loaded = readPracticeRecoverySnapshot(storage, userId);
     const saved = loaded.status === "found" ? loaded.snapshot : null;
-    const currentTask = practiceContextRef.current;
+    const currentTask = accountChanged ? null : practiceContextRef.current;
 
     if (saved && (!currentTask || currentTask.taskId === saved.context.taskId)) {
       recoverySnapshot.current = saved;
+      activeTaskOwner.current = userId;
+      setPracticeOwnerUserId(userId);
       if (!currentTask) restorePracticeContext(saved.context);
       setPracticeGoal(saved.context.focus);
       if (saved.stage === "recording" || saved.stage === "assessing") {
@@ -295,6 +333,8 @@ export default function PracticePage() {
       }
     } else if (currentTask) {
       if (saved) removePracticeRecoverySnapshot(storage, userId);
+      activeTaskOwner.current = userId;
+      setPracticeOwnerUserId(userId);
       const nextSnapshot = createRecoverySnapshot({ userId, context: currentTask, stage: "ready" });
       recoverySnapshot.current = nextSnapshot;
       const written = writePracticeRecoverySnapshot(storage, nextSnapshot);
@@ -302,6 +342,8 @@ export default function PracticePage() {
       if (loaded.status === "expired") setRecoveryNotice("上次任务恢复副本已过期，已开始当前练习任务。");
       else if (loaded.status === "invalid") setRecoveryNotice("上次恢复副本不可读取，已开始当前练习任务。");
     } else {
+      activeTaskOwner.current = null;
+      setPracticeOwnerUserId(null);
       recoverySnapshot.current = null;
       if (loaded.status === "expired") setRecoveryNotice("上次练习恢复副本已过期，请从选句或记录页重新开始。");
       else if (loaded.status === "invalid") setRecoveryNotice("上次练习恢复副本不可读取，请从选句或记录页重新开始。");
@@ -312,13 +354,14 @@ export default function PracticePage() {
     setRecoveryReady(true);
     });
     return () => { active = false; };
-  }, [authStatus, userId, restorePracticeContext, persistRecovery]);
+  }, [authStatus, userId, restorePracticeContext, persistRecovery, stopPracticeAudio]);
 
   useEffect(() => {
-    if (!saveDraft || saveStatus !== "saving") return;
+    if (!saveDraft || saveStatus !== "saving" || authStatus !== "signed-in"
+      || !userId || saveDraft.ownerUserId !== userId || activeTaskOwner.current !== userId) return;
     let active = true;
     persistRecovery("saving", saveDraft);
-    void savePracticeRecord(saveDraft).then(() => {
+    void savePracticeRecord(saveDraft, userId).then(() => {
       if (!active) return;
       persistRecovery("saved", saveDraft);
       setSaveStatus("saved");
@@ -335,7 +378,7 @@ export default function PracticePage() {
       }
     });
     return () => { active = false; };
-  }, [saveDraft, saveStatus, userId, persistRecovery]);
+  }, [saveDraft, saveStatus, authStatus, userId, persistRecovery]);
 
   const hasUnsavedResult = result !== null && saveStatus !== "saved" && saveStatus !== "idle";
   function confirmDiscard(message = discardMessage): boolean {
@@ -374,11 +417,13 @@ export default function PracticePage() {
   }, []);
 
   async function startRecording() {
-    if (!practiceTranslation || !canPractice || !lang || !confirmDiscard()) return;
+    if (authStatus !== "signed-in" || !userId || activeTaskOwner.current !== userId
+      || !practiceTranslation || !canPractice || !lang || !confirmDiscard()) return;
     if (hasUnsavedResult && userId) removePracticeRecoverySnapshot(getSessionStorage(), userId);
     audio.stop();
     const translation = practiceTranslation;
     const assessmentSentence = practiceSentence;
+    const assessmentOwnerUserId = userId;
     const currentGeneration = ++generation.current;
     setPhase("starting");
     setToast("");
@@ -404,7 +449,8 @@ export default function PracticePage() {
     let stream: MediaStream | null = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (currentGeneration !== generation.current) {
+      if (currentGeneration !== generation.current || userIdRef.current !== assessmentOwnerUserId
+        || activeTaskOwner.current !== assessmentOwnerUserId) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -458,11 +504,12 @@ export default function PracticePage() {
         persistRecovery("assessing", null);
         void fetchAssessment(audio, assessmentSentence, controller.signal, lang)
           .then((assessment) => {
-            if (currentGeneration === generation.current) {
+            if (currentGeneration === generation.current && userIdRef.current === assessmentOwnerUserId
+              && activeTaskOwner.current === assessmentOwnerUserId) {
               const goal = practiceFocus(assessmentSentence, assessment.words,
                 { overall: assessment.overall, accuracy: assessment.accuracy, fluency: assessment.fluency,
                   completeness: assessment.completeness, speakingRate: assessment.speakingRate }).goal;
-              const draft = { id: crypto.randomUUID(), sentence: assessmentSentence, translation, result: assessment };
+              const draft = { id: crypto.randomUUID(), ownerUserId: assessmentOwnerUserId, sentence: assessmentSentence, translation, result: assessment };
               persistRecovery("score-ready", draft, goal);
               setResult(assessment);
               setPracticeGoal(goal);
@@ -471,7 +518,8 @@ export default function PracticePage() {
             }
           })
           .catch((cause) => {
-            if (currentGeneration === generation.current) {
+            if (currentGeneration === generation.current && userIdRef.current === assessmentOwnerUserId
+              && activeTaskOwner.current === assessmentOwnerUserId) {
               persistRecovery("ready", null);
               setToast(cause instanceof AssessmentError ? cause.message : "评估失败，请重试");
             }
@@ -479,7 +527,7 @@ export default function PracticePage() {
           .finally(() => {
             window.clearTimeout(timeout);
             if (request.current === controller) request.current = null;
-            if (currentGeneration === generation.current) setPhase("idle");
+            if (currentGeneration === generation.current && userIdRef.current === assessmentOwnerUserId) setPhase("idle");
           });
       };
       recorder.start();

@@ -6,6 +6,7 @@ import {
   PRACTICE_RECOVERY_TTL_MS,
   practiceRecoveryKey,
   readPracticeRecoverySnapshot,
+  savePracticeRecordForOwner,
   samePersistedPracticeRecord,
   writePracticeRecoverySnapshot,
 } from "../app/lib/practice-recovery.mjs";
@@ -29,7 +30,7 @@ const result = {
   words: [{ word: "biblioteca", accuracy: 70, errorType: "Mispronunciation", feedback: "再听示范" }],
   suggestions: [],
 };
-const draft = { id: "record-1", sentence: context.sentence, translation: context.translation, result };
+const draft = { id: "record-1", ownerUserId: "user-1", sentence: context.sentence, translation: context.translation, result };
 const row = {
   id: draft.id, user_id: "user-1", sentence: draft.sentence, translation: draft.translation,
   overall: 86, accuracy: 84, fluency: 88, completeness: 90, speaking_rate: 94, raw_feedback: result.words,
@@ -50,6 +51,56 @@ test("snapshot restores only the current account and expires from the original t
   assert.equal(readPracticeRecoverySnapshot(storage, "user-1", snapshot.expiresAt).status, "expired");
 });
 
+test("a valid pronunciation annotation is fully preserved across snapshot restore", () => {
+  const storage = new MemoryStorage();
+  const annotation = {
+    stress: [{ word: "biblioteca", syllable: "te", display: "biblioTEca" }],
+    liaison: [{ words: "dónde está", pronounced: "dónde'stá", note: "自然连读" }],
+    pauses: [{ after: "está", type: "句末短停" }],
+    pitchPattern: "句中平稳，句末下降",
+  };
+  const snapshot = createPracticeRecoverySnapshot({
+    userId: "user-1",
+    context: { ...context, annotation },
+    stage: "ready",
+    now: 1_000,
+  });
+
+  assert.deepEqual(snapshot.context.annotation, annotation);
+  assert.equal(writePracticeRecoverySnapshot(storage, snapshot), true);
+  const restored = readPracticeRecoverySnapshot(storage, "user-1", 1_001);
+  assert.equal(restored.status, "found");
+  assert.deepEqual(restored.snapshot.context.annotation, annotation);
+});
+
+test("malformed optional annotation is safely downgraded while the learning context remains recoverable", () => {
+  const storage = new MemoryStorage();
+  const snapshot = createPracticeRecoverySnapshot({
+    userId: "user-1",
+    context: { ...context, annotation: { stress: [{ word: "hola" }], liaison: [], pauses: [], pitchPattern: 12 } },
+    stage: "ready",
+    now: 1_000,
+  });
+  assert.equal(snapshot.context.annotation, null);
+  writePracticeRecoverySnapshot(storage, snapshot);
+  const restored = readPracticeRecoverySnapshot(storage, "user-1", 1_001);
+  assert.equal(restored.status, "found");
+  assert.equal(restored.snapshot.context.sentence, context.sentence);
+  assert.equal(restored.snapshot.context.annotation, null);
+});
+
+test("a legacy score snapshot is bound to its validated user namespace on read", () => {
+  const storage = new MemoryStorage();
+  const legacySnapshot = createPracticeRecoverySnapshot({
+    userId: "user-1", context, stage: "score-ready", draft: { ...draft, ownerUserId: "user-1" }, now: 2_000,
+  });
+  delete legacySnapshot.draft.ownerUserId;
+  storage.setItem(practiceRecoveryKey("user-1"), JSON.stringify(legacySnapshot));
+  const restored = readPracticeRecoverySnapshot(storage, "user-1", 2_001);
+  assert.equal(restored.status, "found");
+  assert.equal(restored.snapshot.draft.ownerUserId, "user-1");
+});
+
 test("snapshot rejects malformed or oversized result data instead of rendering it", () => {
   const storage = new MemoryStorage();
   storage.setItem(practiceRecoveryKey("user-1"), "{" + "x".repeat(200_001));
@@ -57,8 +108,10 @@ test("snapshot rejects malformed or oversized result data instead of rendering i
   assert.equal(storage.getItem(practiceRecoveryKey("user-1")), null);
 
   const malformed = createPracticeRecoverySnapshot({ userId: "user-1", context, stage: "score-ready", draft, now: 20_000 });
-  malformed.draft.result.words = null;
-  storage.setItem(practiceRecoveryKey("user-1"), JSON.stringify(malformed));
+  writePracticeRecoverySnapshot(storage, malformed);
+  const storedMalformed = JSON.parse(storage.getItem(practiceRecoveryKey("user-1")));
+  storedMalformed.draft.result.words = null;
+  storage.setItem(practiceRecoveryKey("user-1"), JSON.stringify(storedMalformed));
   assert.equal(readPracticeRecoverySnapshot(storage, "user-1", 20_001).status, "invalid");
 });
 
@@ -67,6 +120,103 @@ test("persisted score comparison is stable across object key order and detects c
   assert.equal(samePersistedPracticeRecord(row, reordered), true);
   assert.equal(samePersistedPracticeRecord(row, { ...row, overall: 100 }), false);
   assert.equal(samePersistedPracticeRecord(row, { ...row, user_id: "user-2" }), false);
+});
+
+test("NUMERIC score values reconcile exactly and detect changes below REAL precision", () => {
+  const preciseResult = {
+    ...result,
+    overall: 86.1234567,
+    accuracy: 84.1234567,
+    fluency: 88.1234567,
+    completeness: 90.1234567,
+    speakingRate: { ...result.speakingRate, wpm: 94.1234567 },
+  };
+  const preciseDraft = { ...draft, ownerUserId: "user-1", result: preciseResult };
+  const persisted = JSON.parse(JSON.stringify({
+    ...row,
+    overall: preciseResult.overall,
+    accuracy: preciseResult.accuracy,
+    fluency: preciseResult.fluency,
+    completeness: preciseResult.completeness,
+    speaking_rate: preciseResult.speakingRate.wpm,
+    raw_feedback: preciseResult.words,
+  }));
+  assert.equal(samePersistedPracticeRecord(persisted, { ...persisted, ...preciseDraft, user_id: "user-1" }), true);
+  const subtleDifference = { ...persisted, overall: preciseResult.overall + 0.000001 };
+  assert.equal(Math.fround(persisted.overall), Math.fround(subtleDifference.overall));
+  assert.equal(samePersistedPracticeRecord(persisted, subtleDifference), false);
+  assert.equal(samePersistedPracticeRecord(persisted, {
+    ...persisted,
+    raw_feedback: [{ ...preciseResult.words[0], accuracy: 70.0001 }],
+  }), false);
+});
+
+test("lost save response reconciles exact numeric values on the full owner-bound save path", async () => {
+  const preciseDraft = {
+    ...draft,
+    result: {
+      ...result,
+      overall: 86.1234567,
+      accuracy: 84.1234567,
+      fluency: 88.1234567,
+      completeness: 90.1234567,
+      speakingRate: { ...result.speakingRate, wpm: 94.1234567 },
+    },
+  };
+  const rows = new Map();
+  let insertCalls = 0;
+  const outcome = await savePracticeRecordForOwner({
+    draft: preciseDraft,
+    expectedUserId: "user-1",
+    getCurrentUserId: async () => "user-1",
+    find: async (id, userId) => ({ data: rows.get(id)?.user_id === userId ? rows.get(id) : null, error: null }),
+    insert: async (candidate) => {
+      insertCalls += 1;
+      const stored = JSON.parse(JSON.stringify(candidate));
+      rows.set(stored.id, stored);
+      return { error: new Error("response lost after server commit") };
+    },
+  });
+  assert.equal(outcome, "saved");
+  assert.equal(insertCalls, 1);
+  assert.equal(rows.size, 1);
+});
+
+test("the save path stops before insert if auth changes while the owner-scoped preflight is in flight", async () => {
+  let activeUserId = "user-1";
+  let insertCalls = 0;
+  const boundDraft = { ...draft, ownerUserId: "user-1" };
+  await assert.rejects(
+    () => savePracticeRecordForOwner({
+      draft: boundDraft,
+      expectedUserId: "user-1",
+      getCurrentUserId: async () => activeUserId,
+      find: async () => {
+        activeUserId = "user-2";
+        return { data: null, error: null };
+      },
+      insert: async () => { insertCalls += 1; return { error: null }; },
+    }),
+    (error) => error.code === "OWNER_CHANGED",
+  );
+  assert.equal(insertCalls, 0);
+});
+
+test("a save draft cannot be rebound to a different signed-in account", async () => {
+  let findCalls = 0;
+  let insertCalls = 0;
+  await assert.rejects(
+    () => savePracticeRecordForOwner({
+      draft: { ...draft, ownerUserId: "user-1" },
+      expectedUserId: "user-2",
+      getCurrentUserId: async () => "user-2",
+      find: async () => { findCalls += 1; return { data: null, error: null }; },
+      insert: async () => { insertCalls += 1; return { error: null }; },
+    }),
+    (error) => error.code === "OWNER_CHANGED",
+  );
+  assert.equal(findCalls, 0);
+  assert.equal(insertCalls, 0);
 });
 
 function concurrentStore() {
