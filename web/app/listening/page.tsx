@@ -159,9 +159,8 @@ export default function ListeningPage() {
     }>
       <div className="page-stack listening-page">
         <header className="listening-intro">
-          <p className="listening-intro-eyebrow">给耳朵一点熟悉的时间</p>
-          <p className="listening-intro-lead">让熟悉的句子，慢慢变自然。</p>
-          <p className="supporting-copy">选好内容，放松听一会儿。</p>
+          <p className="listening-intro-lead">让熟悉的句子，慢慢变自然</p>
+          <p className="supporting-copy">选好内容，放松听一会儿</p>
         </header>
         {(loadStatus === "loading" || (loadStatus === "ready" && !ready)) && <p className="supporting-copy" role="status">正在加载播放设置和句子…</p>}
         {loadStatus === "error" && <p className="form-error" role="alert">播放设置或个人句子加载失败。<button type="button" className="inline-retry" onClick={() => void load()}>重试</button></p>}
@@ -201,13 +200,20 @@ export default function ListeningPage() {
           {dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败。<button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
           <section className="section-block">
             <div className="listening-section-heading">
-              <SectionHeading>朗读范围</SectionHeading>
+              <div className="listening-range-title">
+                <SectionHeading>朗读范围</SectionHeading>
+                <span className="listening-count" aria-label={`本次句子 ${playlist.length} 句`}>{playlist.length} 句</span>
+              </div>
               <button type="button" className="my-sentences-link" onClick={openMySentences}>我的句子</button>
             </div>
             <div className="option-row" role="group" aria-label="朗读范围">
               {scopes.map((choice) => <button key={choice.value} type="button" aria-pressed={preferences.scope === choice.value} className={`option-choice${preferences.scope === choice.value ? " selected" : ""}`} onClick={() => changeScope(choice.value)}>{choice.label}</button>)}
             </div>
-            {preferences.scope === "custom" && <p className="field-note">已选 {validCustomSelection(preferences.customSelection, pool).length} 句 · <button type="button" className="inline-link-button" onClick={openSentenceSelector}>调整选择</button></p>}
+            {preferences.scope === "custom" && <p className="field-note"><button type="button" className="inline-link-button" onClick={openSentenceSelector}>调整选择</button></p>}
+            {!player.isFocusing && !playlist.length && <div className="listening-empty-state">
+              <EmptyText>{!pool.length ? "还没有个人句子。先去选句页完成一句讲解。" : preferences.scope === "custom" ? "自定义范围没有有效句子，请重新选择。" : "暂无可播放的句子"}</EmptyText>
+              {!pool.length && <Link href="/" className="inline-link">去选句</Link>}
+            </div>}
           </section>
           <section className="section-block">
             <SectionHeading>播放设置</SectionHeading>
@@ -228,22 +234,22 @@ export default function ListeningPage() {
             <label className="toggle-row"><span>显示原文</span><input type="checkbox" checked={preferences.showText} onChange={(event) => updatePreferences({ ...preferencesRef.current, showText: event.target.checked })} /></label>
             <label className="toggle-row"><span>显示翻译</span><input type="checkbox" checked={preferences.showTranslation} onChange={(event) => updatePreferences({ ...preferencesRef.current, showTranslation: event.target.checked })} /></label>
           </section>
-          {saveStatus === "saving" && <p className="supporting-copy" role="status">正在保存播放设置…</p>}
-          {saveStatus === "saved" && <p className="supporting-copy" role="status">播放设置已保存</p>}
-          {saveStatus === "error" && <p className="form-error" role="alert">播放设置未保存。<button type="button" className="inline-retry" onClick={() => void flushSaveQueue()}>重试</button></p>}
-          {!player.isFocusing && <section className="section-block">
-            <SectionHeading>本次句子<span className="listening-count">{playlist.length} 句</span></SectionHeading>
-            {!playlist.length ? <>
-              <EmptyText>{!pool.length ? "还没有个人句子。先去选句页完成一句讲解。" : preferences.scope === "custom" ? "自定义范围没有有效句子，请重新选择。" : "暂无可播放的句子"}</EmptyText>
-              {!pool.length && <Link href="/" className="inline-link">去选句</Link>}
-            </> : <details className="listening-list-details"><summary>查看本次句子</summary><ul className="listening-playlist">{playlist.map((item, index) => <li key={item.key} aria-current={player.activeKey === item.key ? "true" : undefined} className={player.activeKey === item.key ? "is-current" : ""}>
+          {!player.isFocusing && playlist.length > 0 && <section className="section-block">
+            <SectionHeading>本次句子</SectionHeading>
+            <details className="listening-list-details">
+              <summary>查看句单</summary>
+              <ul className="listening-playlist">{playlist.map((item, index) => <li key={item.key} aria-current={player.activeKey === item.key ? "true" : undefined} className={player.activeKey === item.key ? "is-current" : ""}>
                 <div className="listening-list-content">
                   {preferences.showText ? <span className="listening-sentence" lang="es">{item.sentence}</span> : <span className="listening-hidden">第 {index + 1} 句</span>}
                   {preferences.showTranslation && <span className="listening-translation">{item.translation || "暂无翻译"}</span>}
                   {player.activeKey === item.key && statusText && <span className="listening-current">{statusText}</span>}
                 </div>
-              </li>)}</ul></details>}
+              </li>)}</ul>
+            </details>
           </section>}
+          {saveStatus === "saving" && <p className="supporting-copy" role="status">正在保存播放设置…</p>}
+          {saveStatus === "saved" && <p className="supporting-copy" role="status">播放设置已保存</p>}
+          {saveStatus === "error" && <p className="form-error" role="alert">播放设置未保存。<button type="button" className="inline-retry" onClick={() => void flushSaveQueue()}>重试</button></p>}
         </>}
       </div>
       <dialog ref={manageDialogRef} className="listening-leave-dialog" aria-labelledby="leave-listening-title" onCancel={(event) => { event.preventDefault(); setConfirmManageNavigation(false); }}>

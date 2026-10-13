@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageShell, SectionHeading } from "../components/page-shell";
 import { useAuth } from "../components/auth-provider";
-import { PronunciationAnnotation } from "../components/pronunciation-annotation";
 import { useSentenceDraft } from "../components/sentence-draft";
 import { useUserSettings } from "../components/user-settings-provider";
 import { ExplainError, fetchExplanation } from "../lib/explanation";
@@ -143,45 +142,45 @@ export default function ExplanationPage() {
       ) : (
         <div className="page-stack explanation-page">
           <section className="section-block">
-            <SectionHeading>原句</SectionHeading>
             <p className="learning-sentence" lang="es">{explainedSentence}</p>
-            <PronunciationAnnotation annotation={explanation.annotation} />
             {collectionStatus === "error" && <p className="collection-retry-state">句子尚未收录。<button type="button" className="inline-retry" onClick={retryCollection}>重试收录</button></p>}
           </section>
 
-          <section className="section-block understanding-surface">
-            <div className="section-block">
-              <SectionHeading>中文翻译</SectionHeading>
-              <p className="translation-text">{explanation.translation}</p>
-            </div>
-            {explanation.memoryTip ? (
+          <section className="section-block explanation-understanding" aria-label="句子理解">
+            <div className="section-block understanding-surface">
               <div className="section-block">
-                <SectionHeading>核心记忆点</SectionHeading>
-                <p className="memory-text">{explanation.memoryTip}</p>
+                <SectionHeading>中文翻译</SectionHeading>
+                <p className="translation-text">{explanation.translation}</p>
               </div>
-            ) : <p className="missing-part">核心记忆点：该部分未生成</p>}
-          </section>
-
-          <details className="grammar-details">
-            <summary className="grammar-summary">语法分析 <span aria-hidden="true">⌄</span></summary>
-            <div className="grammar-content">
-              <div><SectionHeading>时态·语式</SectionHeading><p>{explanation.tenseMood}</p></div>
-              <div>
-                <SectionHeading>动词变位</SectionHeading>
-                {explanation.verbs.length ? (
-                  <ul className="verb-list">
-                    {explanation.verbs.map((verb, index) => (
-                      <li key={`${verb.form}-${index}`}>
-                        <strong lang="es">{verb.form}</strong>（原形 <span lang="es">{verb.infinitive}</span>） · {verb.person}<br />{verb.notes}
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p>本句无动词</p>}
-              </div>
-              <div><SectionHeading>语序结构</SectionHeading><p>{explanation.structure}</p></div>
-              <div><SectionHeading>中英对比</SectionHeading><p>{explanation.compare || "该部分未生成"}</p></div>
+              {explanation.memoryTip ? (
+                <div className="section-block explanation-memory">
+                  <SectionHeading>核心记忆点</SectionHeading>
+                  <p className="memory-text">{explanation.memoryTip}</p>
+                </div>
+              ) : <p className="missing-part">核心记忆点：该部分未生成</p>}
             </div>
-          </details>
+
+            <section className="section-block explanation-grammar">
+              <SectionHeading>语法分析</SectionHeading>
+              <div className="grammar-content">
+                <div><SectionHeading>时态·语式</SectionHeading><p>{explanation.tenseMood}</p></div>
+                <div>
+                  <SectionHeading>动词变位</SectionHeading>
+                  {explanation.verbs.length ? (
+                    <ul className="verb-list">
+                      {explanation.verbs.map((verb, index) => (
+                        <li key={`${verb.form}-${index}`}>
+                          <strong lang="es">{verb.form}</strong>（原形 <span lang="es">{verb.infinitive}</span>） · {verb.person}<br />{verb.notes}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p>本句无动词</p>}
+                </div>
+                <div><SectionHeading>语序结构</SectionHeading><p>{explanation.structure}</p></div>
+                <div><SectionHeading>中英对比</SectionHeading><p>{explanation.compare || "该部分未生成"}</p></div>
+              </div>
+            </section>
+          </section>
           <button type="button" className="plain-button" onClick={changeSentence}>换一句</button>
         </div>
       )}

@@ -42,7 +42,11 @@ function normalizeContext(context) {
     && (context.recordReturnId === null || typeof context.recordReturnId === "string")
     && (context.focus === null || (typeof context.focus === "string" && context.focus.length <= 500))
     && typeof context.repeatPractice === "boolean")) return null;
-  return { ...context, annotation: normalizedAnnotation(context.annotation) };
+  const candidate = typeof context.focusWord === "string" && context.focusWord.length <= 80
+    ? context.focusWord.trim() : "";
+  const words = context.sentence.match(/[\p{L}\p{M}\p{N}]+(?:['’\-][\p{L}\p{M}\p{N}]+)*/gu) ?? [];
+  const focusWord = words.find((word) => word.toLocaleLowerCase("es") === candidate.toLocaleLowerCase("es")) ?? null;
+  return { ...context, annotation: normalizedAnnotation(context.annotation), focusWord };
 }
 
 function validDraft(draft, context, userId, allowLegacyOwner = false) {

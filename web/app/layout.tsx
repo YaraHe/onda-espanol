@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { SentenceDraftProvider } from "./components/sentence-draft";
@@ -8,7 +8,23 @@ import { BackendHealthProbe } from "./components/backend-health-probe";
 
 export const metadata: Metadata = {
   title: "西语学习",
-  description: "Spanish learning app",
+  description: "跌宕起伏的西语：个人西班牙语学习与跟读练习。",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "西语学习",
+    statusBarStyle: "default",
+  },
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#f6f2e8",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

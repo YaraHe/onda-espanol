@@ -51,8 +51,8 @@ function getSessionStorage() {
   try { return window.sessionStorage; } catch { return null; }
 }
 
-function contextWithFocus(context: PracticeRecoveryContext, focus: string | null): PracticeRecoveryContext {
-  return { ...context, focus };
+function contextWithFocus(context: PracticeRecoveryContext, focus: string | null, focusWord: string | null): PracticeRecoveryContext {
+  return { ...context, focus, focusWord };
 }
 
 function usePracticeAudio(lang: "es-ES" | "es-MX" | null) {
@@ -121,16 +121,35 @@ function usePracticeAudio(lang: "es-ES" | "es-MX" | null) {
   return { ...state, play, stop };
 }
 
-function DemoPlayer({ sentence, audio, rate, setRate }: {
+function WordAudioControl({ word, audio, rate }: {
+  word: string;
+  audio: ReturnType<typeof usePracticeAudio>;
+  rate: number;
+}) {
+  const active = audio.target === "word" && audio.text === word && audio.status !== "idle";
+  return <div className="word-audio-control">
+    <button type="button" className="plain-button" onClick={() => active ? audio.stop() : void audio.play(word, rate, "word")}>
+      <Icon name={active ? "stop" : "volume"} />{active ? "停止词音" : `听「${word}」`}
+    </button>
+    {audio.status === "loading" && audio.target === "word" && audio.text === word && <p className="tts-feedback" role="status">正在生成词音…</p>}
+    {audio.error && audio.target === "word" && audio.text === word && <p className="tts-feedback tts-error" role="alert">{audio.error} <button type="button" onClick={() => void audio.play(word, rate, "word")}>重试</button></p>}
+  </div>;
+}
+
+function DemoPlayer({ sentence, annotation, audio, rate, setRate }: {
   sentence: string;
+  annotation: PracticeRecoveryContext["annotation"];
   audio: ReturnType<typeof usePracticeAudio>;
   rate: number;
   setRate: (value: number) => void;
 }) {
   const active = audio.target === "sentence" && audio.status !== "idle";
   return (
-    <section className="section-block">
-      <SectionHeading>听示范</SectionHeading>
+    <section className="section-block practice-demo" aria-label="整句示范音频与发音提示">
+      {annotation && (annotation.stress.length > 0 || annotation.liaison.length > 0 || annotation.pauses.length > 0 || annotation.pitchPattern.trim()) &&
+        <div className="practice-listening-hints"><h3>听示范时留意</h3><PronunciationAnnotation annotation={annotation} />
+          <p className="practice-hints-note">这些是学习提示，请结合示范音频辨别。</p>
+        </div>}
       <button type="button" className="secondary-button" onClick={() => active ? audio.stop() : void audio.play(sentence, rate, "sentence")}>
         <Icon name={active ? "stop" : "volume"} />{active ? "停止" : "听示范"}
       </button>
@@ -159,6 +178,7 @@ export default function PracticePage() {
   const [elapsed, setElapsed] = useState(0);
   const [toast, setToast] = useState("");
   const [result, setResult] = useState<AssessmentResult | null>(null);
+  const [perfectScoreArrival, setPerfectScoreArrival] = useState(false);
   const [saveDraft, setSaveDraft] = useState<PracticeRecordDraft | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [recoveryReady, setRecoveryReady] = useState(false);
@@ -168,23 +188,30 @@ export default function PracticePage() {
   const [snapshotWarning, setSnapshotWarning] = useState("");
   const [selectedWord, setSelectedWord] = useState<{ kind: "reference" | "insertion"; index: number } | null>(null);
   const [practiceGoal, setPracticeGoal] = useState<string | null>(repeatPractice?.focus ?? practiceContext?.focus ?? null);
+  const [practiceTargetWord, setPracticeTargetWord] = useState<string | null>(repeatPractice?.focusWord ?? practiceContext?.focusWord ?? null);
   const recording = useRef<{ recorder: MediaRecorder; stream: MediaStream; started: number; chunks: Blob[] } | null>(null);
   const request = useRef<AbortController | null>(null);
   const timer = useRef<number | null>(null);
+  const perfectScoreTimer = useRef<number | null>(null);
   const generation = useRef(0);
   const initializedUser = useRef<string | null>(null);
   const activeTaskOwner = useRef<string | null>(null);
   const recoverySnapshot = useRef<RecoverySnapshot | null>(null);
   const practiceContextRef = useRef(practiceContext);
   const practiceGoalRef = useRef(practiceGoal);
+  const practiceTargetWordRef = useRef(practiceTargetWord);
   const saveDraftRef = useRef(saveDraft);
   const userIdRef = useRef(userId);
+  useEffect(() => () => {
+    if (perfectScoreTimer.current !== null) window.clearTimeout(perfectScoreTimer.current);
+  }, []);
   useLayoutEffect(() => {
     practiceContextRef.current = practiceContext;
     practiceGoalRef.current = practiceGoal;
+    practiceTargetWordRef.current = practiceTargetWord;
     saveDraftRef.current = saveDraft;
     userIdRef.current = userId;
-  }, [practiceContext, practiceGoal, saveDraft, userId]);
+  }, [practiceContext, practiceGoal, practiceTargetWord, saveDraft, userId]);
   const practiceSessionOwned = recoveryReady && recoveryUserId === userId && practiceOwnerUserId === userId;
   const practiceSentence = practiceSessionOwned ? (repeatPractice?.sentence ?? explainedSentence) : "";
   const practiceTranslation = practiceSessionOwned
@@ -200,13 +227,13 @@ export default function PracticePage() {
   }) : null;
 
   const persistRecovery = useCallback((stage: RecoveryStage, draft: PracticeRecordDraft | null = saveDraftRef.current,
-    focus = practiceGoalRef.current, context = practiceContextRef.current): boolean => {
+    focus = practiceGoalRef.current, context = practiceContextRef.current, focusWord = practiceTargetWordRef.current): boolean => {
     const activeUserId = userIdRef.current;
     if (!activeUserId || activeTaskOwner.current !== activeUserId || !context
       || (draft && draft.ownerUserId !== activeUserId)) return false;
     const snapshot = createRecoverySnapshot({
       userId: activeUserId,
-      context: contextWithFocus(context, focus),
+      context: contextWithFocus(context, focus, focusWord),
       stage,
       draft,
       previous: recoverySnapshot.current,
@@ -240,15 +267,19 @@ export default function PracticePage() {
       }
       if (timer.current !== null) window.clearInterval(timer.current);
       timer.current = null;
+      if (perfectScoreTimer.current !== null) window.clearTimeout(perfectScoreTimer.current);
+      perfectScoreTimer.current = null;
       stopPracticeAudio();
       activeTaskOwner.current = null;
       setPracticeOwnerUserId(null);
       recoverySnapshot.current = null;
       setPhase("idle");
       setResult(null);
+      setPerfectScoreArrival(false);
       setSaveDraft(null);
       setSaveStatus("idle");
       setSelectedWord(null);
+      setPracticeTargetWord(null);
       setToast("");
     }
     if (authStatus !== "signed-in" || !userId) {
@@ -269,9 +300,11 @@ export default function PracticePage() {
     setRecoveryUserId(null);
     recoverySnapshot.current = null;
     setResult(null);
+    setPerfectScoreArrival(false);
     setSaveDraft(null);
     setSaveStatus("idle");
     setPracticeGoal(practiceContextRef.current?.focus ?? null);
+    setPracticeTargetWord(practiceContextRef.current?.focusWord ?? null);
     setRecoveryNotice("");
     setSnapshotWarning("");
 
@@ -291,6 +324,7 @@ export default function PracticePage() {
       setPracticeOwnerUserId(userId);
       if (!currentTask) restorePracticeContext(saved.context);
       setPracticeGoal(saved.context.focus);
+      setPracticeTargetWord(saved.context.focusWord);
       if (saved.stage === "recording" || saved.stage === "assessing") {
         setRecoveryNotice(saved.stage === "recording"
           ? "刷新中断了录音，请重新录制；录音内容没有保存。"
@@ -418,7 +452,8 @@ export default function PracticePage() {
 
   async function startRecording() {
     if (authStatus !== "signed-in" || !userId || activeTaskOwner.current !== userId
-      || !practiceTranslation || !canPractice || !lang || !confirmDiscard()) return;
+      || !practiceTranslation || !canPractice || !lang
+      || !confirmDiscard("当前评分尚未确认保存。再读一次会放弃这份未保存的评分，确定继续吗？")) return;
     if (hasUnsavedResult && userId) removePracticeRecoverySnapshot(getSessionStorage(), userId);
     audio.stop();
     const translation = practiceTranslation;
@@ -428,6 +463,9 @@ export default function PracticePage() {
     setPhase("starting");
     setToast("");
     setResult(null);
+    if (perfectScoreTimer.current !== null) window.clearTimeout(perfectScoreTimer.current);
+    perfectScoreTimer.current = null;
+    setPerfectScoreArrival(false);
     setSaveDraft(null);
     setSaveStatus("idle");
     setSelectedWord(null);
@@ -506,13 +544,24 @@ export default function PracticePage() {
           .then((assessment) => {
             if (currentGeneration === generation.current && userIdRef.current === assessmentOwnerUserId
               && activeTaskOwner.current === assessmentOwnerUserId) {
-              const goal = practiceFocus(assessmentSentence, assessment.words,
+              const focus = practiceFocus(assessmentSentence, assessment.words,
                 { overall: assessment.overall, accuracy: assessment.accuracy, fluency: assessment.fluency,
-                  completeness: assessment.completeness, speakingRate: assessment.speakingRate }).goal;
+                  completeness: assessment.completeness, speakingRate: assessment.speakingRate });
               const draft = { id: crypto.randomUUID(), ownerUserId: assessmentOwnerUserId, sentence: assessmentSentence, translation, result: assessment };
-              persistRecovery("score-ready", draft, goal);
+              persistRecovery("score-ready", draft, focus.goal, practiceContextRef.current, focus.word);
               setResult(assessment);
-              setPracticeGoal(goal);
+              if (perfectScoreTimer.current !== null) window.clearTimeout(perfectScoreTimer.current);
+              const shouldCelebrate = assessment.overall === 100
+                && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              setPerfectScoreArrival(shouldCelebrate);
+              perfectScoreTimer.current = shouldCelebrate
+                ? window.setTimeout(() => {
+                  setPerfectScoreArrival(false);
+                  perfectScoreTimer.current = null;
+                }, 1500)
+                : null;
+              setPracticeGoal(focus.goal);
+              setPracticeTargetWord(focus.word);
               setSaveDraft(draft);
               setSaveStatus("saving");
             }
@@ -572,7 +621,7 @@ export default function PracticePage() {
   const action = canPractice && lang ? <button type="button" className={`primary-button ${phase === "recording" ? "recording-button" : ""} ${phase === "assessing" ? "is-loading" : ""}`}
     disabled={phase === "starting" || phase === "assessing"}
     onClick={() => phase === "recording" ? stopRecording() : void startRecording()}>
-    {phase === "recording" ? <><Icon name="stop" />停止 · {clock}</> : phase === "assessing" ? "评估中…" : phase === "starting" ? "正在请求麦克风…" : <><Icon name="mic" />录音</>}
+    {phase === "recording" ? <><Icon name="stop" />停止 · {clock}</> : phase === "assessing" ? "评估中…" : phase === "starting" ? "正在请求麦克风…" : result ? "再读一次" : <><Icon name="mic" />录音</>}
   </button> : undefined;
 
   return (
@@ -580,17 +629,16 @@ export default function PracticePage() {
       {!recoveryReady || recoveryUserId !== userId ? (
         <p className="supporting-copy" role="status">正在恢复当前练习…</p>
       ) : (
-      <div className="page-stack">
+      <div className="page-stack practice-page">
         {recoveryNotice && <p className="supporting-copy" role="status">{recoveryNotice}</p>}
         {snapshotWarning && <p className="form-error" role="alert">{snapshotWarning}</p>}
         <section className="section-block">
-          <SectionHeading>原句</SectionHeading>
           {canPractice ? (
             <>
               <p className="learning-sentence" lang="es">{practiceSentence}</p>
-              {practiceTranslation && <p className="translation-text">{practiceTranslation}</p>}
-              {!repeatPractice && (explanation?.annotation ?? practiceContext?.annotation) && <PronunciationAnnotation annotation={(explanation?.annotation ?? practiceContext?.annotation)!} />}
-              {practiceGoal && !result && <p className="practice-goal" role="status"><strong>本次练习目标：</strong>{practiceGoal}</p>}
+              {practiceGoal && !result && <div className="practice-goal" role="status"><p><strong>本次练习目标：</strong>{practiceGoal}</p>
+                {practiceTargetWord && lang && <WordAudioControl word={practiceTargetWord} audio={audio} rate={audioRate} />}
+              </div>}
             </>
           ) : (
             <><EmptyText>选定句子后，就可以听示范并练习朗读。</EmptyText><Link href="/" className="inline-link">去选句</Link></>
@@ -598,9 +646,12 @@ export default function PracticePage() {
         </section>
         {canPractice && dialectStatus === "loading" && <p className="supporting-copy" role="status">正在加载方言设置…</p>}
         {canPractice && dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败 <button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
-        {canPractice && lang && <DemoPlayer key={`${practiceSentence}:${lang}`} sentence={practiceSentence} audio={audio} rate={audioRate} setRate={setAudioRate} />}
+        {canPractice && lang && <DemoPlayer key={`${practiceSentence}:${lang}`} sentence={practiceSentence}
+          annotation={repeatPractice ? null : explanation?.annotation ?? practiceContext?.annotation ?? null}
+          audio={audio} rate={audioRate} setRate={setAudioRate} />}
+        {canPractice && practiceTranslation && <p className="practice-translation"><span>句意</span>{practiceTranslation}</p>}
         {phase === "assessing" && <p className="assessment-status" role="status">正在评估朗读…</p>}
-        {result && <section className={`section-block assessment-result${result.overall === 100 ? " assessment-perfect" : ""}`} aria-label="评分结果">
+        {result && <section className="section-block assessment-result" aria-label="评分结果">
           <SectionHeading>评分结果</SectionHeading>
           {saveStatus === "verifying" && <p className="record-save-status" role="status">正在核对云端保存状态…</p>}
           {saveStatus === "saving" && <p className="record-save-status" role="status">保存中…</p>}
@@ -608,18 +659,28 @@ export default function PracticePage() {
           {saveStatus === "failed" && <p className="record-save-status" role="alert">保存失败，评分结果仍在本页。<button type="button" className="inline-retry" onClick={() => setSaveStatus("saving")}>重试保存</button></p>}
           {saveStatus === "conflict" && <p className="record-save-status" role="alert">{recoveryNotice || "云端已有同 ID 的不同评分，本地结果未覆盖云端记录。"} {saveDraft && <Link className="inline-link" href={`/records/detail?id=${encodeURIComponent(saveDraft.id)}`}>查看云端记录</Link>}</p>}
           {saveStatus === "removed" && <p className="record-save-status" role="alert">{recoveryNotice || "云端没有找到这条已保存评分；本地副本不会自动重新写入。"}</p>}
-          <div className="assessment-overall"><strong>{Math.round(result.overall)}</strong><span>总分 / 100</span></div>
-          <div className="assessment-dimensions">
-            {([ ["准确度", result.accuracy], ["流利度", result.fluency], ["完整度", result.completeness] ] as const).map(([label, value]) => (
-              <div className="assessment-dimension" key={label}>
-                <div><span>{label}</span><span>{Math.round(value)}</span></div>
-                <div className="assessment-track" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value)}><span style={{ width: `${value}%` }} /></div>
-              </div>
-            ))}
+          <div className={`assessment-overall${perfectScoreArrival && result.overall === 100 ? " celebrating" : ""}`}>
+            {perfectScoreArrival && result.overall === 100 && <span className="assessment-sparkles" aria-hidden="true">
+              {[
+                [4, 18, 13, 0], [16, 77, 5, 90], [27, 8, 8, 160], [37, 91, 4, 240],
+                [44, 12, 6, 70], [59, 88, 10, 180], [72, 9, 5, 280], [82, 78, 8, 120],
+                [96, 22, 13, 210], [94, 87, 5, 320], [7, 51, 7, 350], [88, 47, 6, 60],
+              ].map(([left, top, size, delay], index) => <i key={index} className={index % 3 === 1 ? "mote" : "spark"}
+                style={{ left: `${left}%`, top: `${top}%`, width: `${size}px`, height: `${size}px`, animationDelay: `${delay}ms` }}>
+                {index % 3 === 1 ? <svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" /></svg>
+                  : <svg viewBox="0 0 20 20"><path d={index % 2 === 0
+                    ? "M10 .8 12.2 7.8 19.2 10 12.2 12.2 10 19.2 7.8 12.2 .8 10 7.8 7.8Z"
+                    : "M10 1 11.8 8.2 19 10 11.8 11.8 10 19 8.2 11.8 1 10 8.2 8.2Z"} /></svg>}
+              </i>)}
+            </span>}
+            <strong>{Math.round(result.overall)}</strong><span>总分 / 100</span>
           </div>
-          <p className="assessment-rate">语速 <strong>{result.speakingRate.wpm} 词/分 · {result.speakingRate.verdict}</strong><span>参考 {result.speakingRate.referenceWpm} 词/分</span></p>
+          {result.overall === 100
+            ? null
+            : resultFocus?.goal && <div className="assessment-suggestions"><h3>下次留意</h3><p>{resultFocus.goal}</p></div>}
           <div className="assessment-words">
             <h3>逐词反馈</h3>
+            <p className="assessment-word-help">有下划线的词值得再练；点词查看反馈，可靠对齐的词可听示范。</p>
             <div className="assessment-word-list" lang="es">
               {aligned?.words.map((word, index) => <Fragment key={`${word.start}-${index}`}>
                 <span>{word.prefix}</span>
@@ -645,18 +706,19 @@ export default function PracticePage() {
             {aligned && (aligned.unalignedCount > 0 || aligned.words.some((word) => !word.assessment))
               && <p className="assessment-word-feedback">部分词未能可靠对齐，未在原句上标出词级分数</p>}
             {selectedAssessment && <p className="assessment-word-feedback">{selectedLabel} · {Math.round(selectedAssessment.accuracy)}分：{selectedAssessment.feedback}</p>}
-            {selectedWord?.kind === "reference" && selectedAssessment && <div className="word-audio-control">
-              <button type="button" className="plain-button" onClick={() => audio.target === "word" && audio.text === selectedLabel && audio.status !== "idle"
-                ? audio.stop() : void audio.play(selectedLabel ?? "", audioRate, "word")}>
-                <Icon name={audio.target === "word" && audio.text === selectedLabel && audio.status !== "idle" ? "stop" : "volume"} />
-                {audio.target === "word" && audio.text === selectedLabel && audio.status !== "idle" ? "停止词音" : `听「${selectedLabel}」`}
-              </button>
-              {audio.status === "loading" && audio.target === "word" && audio.text === selectedLabel && <p className="tts-feedback" role="status">正在生成词音…</p>}
-              {audio.error && audio.target === "word" && audio.text === selectedLabel && <p className="tts-feedback tts-error" role="alert">{audio.error} <button type="button" onClick={() => void audio.play(selectedLabel ?? "", audioRate, "word")}>重试</button></p>}
-            </div>}
+            {selectedWord?.kind === "reference" && selectedAssessment && selectedLabel &&
+              <WordAudioControl word={selectedLabel} audio={audio} rate={audioRate} />}
           </div>
-          {resultFocus?.goal && <div className="assessment-suggestions"><h3>提升方向</h3><p>{resultFocus.goal}</p></div>}
-          <div className="result-actions"><button type="button" className="secondary-button" onClick={() => void startRecording()}>再读一次</button><button type="button" className="plain-button" onClick={changeSentence}>换一句</button></div>
+          <div className="assessment-dimensions">
+            {([ ["准确度", result.accuracy], ["流利度", result.fluency], ["完整度", result.completeness] ] as const).map(([label, value]) => (
+              <div className="assessment-dimension" key={label}>
+                <div><span>{label}</span><span>{Math.round(value)}</span></div>
+                <div className="assessment-track" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value)}><span style={{ width: `${value}%` }} /></div>
+              </div>
+            ))}
+          </div>
+          <p className="assessment-rate">语速 <strong>{result.speakingRate.wpm} 词/分 · {result.speakingRate.verdict}</strong><span>参考 {result.speakingRate.referenceWpm} 词/分</span></p>
+          <div className="result-actions"><button type="button" className="plain-button" onClick={changeSentence}>换一句</button></div>
         </section>}
       </div>
       )}

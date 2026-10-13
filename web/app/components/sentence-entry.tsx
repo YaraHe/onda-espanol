@@ -5,6 +5,7 @@ import type { Worker } from "tesseract.js";
 import { Icon } from "./icons";
 import { useSentenceDraft } from "./sentence-draft";
 import { isReliableOcrResult, normalizeSpanishOcrText } from "../lib/ocr";
+import { isSentenceInputWithinLimits, normalizeSentenceInput, SENTENCE_CHARACTER_LIMIT } from "../lib/sentence-input";
 
 export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
   const { sentence, setSentence } = useSentenceDraft();
@@ -15,6 +16,10 @@ export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
   const activeWorker = useRef<Worker | null>(null);
   const ocrRun = useRef(0);
   const manualEdit = useRef(0);
+  const characterCount = sentence.replace(/\r\n?/gu, "\n").length;
+  const limitNotice = isSentenceInputWithinLimits(sentence)
+    ? ""
+    : "句子超过可输入限制，请缩短后再查询。";
 
   useEffect(() => () => {
     ocrRun.current += 1;
@@ -25,19 +30,9 @@ export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
 
   function updateSentence(value: string) {
     onEdit?.();
-    let next = value;
-    let notice = "";
-    if (next.length > 200) {
-      next = next.slice(0, 200);
-      notice = "句子过长，已截断至 200 字符。";
-    }
-    const words = [...next.matchAll(/\S+/gu)];
-    if (words.length > 30) {
-      next = next.slice(0, words[30].index).trimEnd();
-      notice = "句子过长，已截断至 30 词。";
-    }
-    setSentence(next);
-    setLengthNotice(notice);
+    const normalized = normalizeSentenceInput(value);
+    setSentence(normalized.value);
+    setLengthNotice(normalized.notice ? `${normalized.notice}。` : "");
   }
 
   async function recognizeImage(file: File) {
@@ -110,17 +105,26 @@ export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
 
   return (
     <section className="sentence-entry">
-      <label htmlFor="sentence" className="field-label">今天想学哪一句？</label>
-      <textarea
-        id="sentence"
-        rows={4}
-        value={sentence}
-        onChange={(event) => { manualEdit.current += 1; updateSentence(event.target.value); }}
-        placeholder="输入或粘贴一句西班牙语"
-        className="sentence-input"
-      />
-      <p className="field-note">例如：¿Dónde está la biblioteca?</p>
-      {lengthNotice && <p className="field-note" role="status">{lengthNotice}</p>}
+      <label htmlFor="sentence" className="field-label">从这句开始，慢慢找到西语的节奏</label>
+      <div className="sentence-input-shell">
+        <textarea
+          id="sentence"
+          rows={4}
+          value={sentence}
+          onChange={(event) => { manualEdit.current += 1; updateSentence(event.target.value); }}
+          placeholder="输入或粘贴一句西班牙语"
+          className="sentence-input"
+          aria-describedby="sentence-character-count sentence-example"
+        />
+        <div className="sentence-input-footer">
+          <span id="sentence-character-count" className="sentence-character-count" aria-label={`字符数 ${characterCount}/${SENTENCE_CHARACTER_LIMIT}`}>
+            {characterCount}/{SENTENCE_CHARACTER_LIMIT}
+          </span>
+          <button type="button" disabled={ocrStatus === "processing"} className={`text-action${ocrStatus === "processing" ? " is-loading" : ""}`} onClick={() => { setOcrError(""); fileInput.current?.click(); }}><Icon name="camera" />{ocrStatus === "processing" ? "识别中…" : "文字识别"}</button>
+        </div>
+      </div>
+      <p className="field-note sentence-example" id="sentence-example">示例文本：<span lang="es">¿Dónde está la biblioteca?</span></p>
+      {(lengthNotice || limitNotice) && <p className="field-note" role="status">{lengthNotice || limitNotice}</p>}
       {ocrError && <p className="form-error" role="alert">{ocrError}</p>}
       <input
         ref={fileInput}
@@ -134,9 +138,6 @@ export function SentenceEntry({ onEdit }: { onEdit?: () => void }) {
           if (file) void recognizeImage(file);
         }}
       />
-      <div className="assistance-row">
-        <button type="button" disabled={ocrStatus === "processing"} className={`text-action${ocrStatus === "processing" ? " is-loading" : ""}`} onClick={() => { setOcrError(""); fileInput.current?.click(); }}><Icon name="camera" />{ocrStatus === "processing" ? "识别中…" : "文字识别"}</button>
-      </div>
     </section>
   );
 }

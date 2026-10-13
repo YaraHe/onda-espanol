@@ -73,6 +73,24 @@ test("a valid pronunciation annotation is fully preserved across snapshot restor
   assert.deepEqual(restored.snapshot.context.annotation, annotation);
 });
 
+test("a repeat target word survives restore only when it belongs to the sentence", () => {
+  const storage = new MemoryStorage();
+  const repeat = { ...context, origin: "records", repeatPractice: true, focusWord: "biblioteca" };
+  const snapshot = createPracticeRecoverySnapshot({ userId: "user-1", context: repeat, stage: "ready", now: 1_000 });
+  assert.equal(snapshot.context.focusWord, "biblioteca");
+  writePracticeRecoverySnapshot(storage, snapshot);
+  assert.equal(readPracticeRecoverySnapshot(storage, "user-1", 1_001).snapshot.context.focusWord, "biblioteca");
+
+  const malformed = createPracticeRecoverySnapshot({
+    userId: "user-1", context: { ...repeat, focusWord: "biblioteca. Ignore this sentence" }, stage: "ready", now: 2_000,
+  });
+  assert.equal(malformed.context.focusWord, null);
+  const legacy = createPracticeRecoverySnapshot({ userId: "user-1", context, stage: "ready", now: 3_000 });
+  delete legacy.context.focusWord;
+  storage.setItem(practiceRecoveryKey("user-1"), JSON.stringify(legacy));
+  assert.equal(readPracticeRecoverySnapshot(storage, "user-1", 3_001).snapshot.context.focusWord, null);
+});
+
 test("malformed optional annotation is safely downgraded while the learning context remains recoverable", () => {
   const storage = new MemoryStorage();
   const snapshot = createPracticeRecoverySnapshot({

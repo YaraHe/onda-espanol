@@ -56,7 +56,7 @@
 | `compare` | string | 中英对比 |
 
 > 返回方式：v1 同步非流式（输出短）；后续可升级流式以降低首字延迟。
-> 字段分级与确定性校验：`translation`、`structure` 必须为非空字符串；`verbs` 必须为数组，非空时每项的 `form`、`infinitive`、`person`、`notes` 必须为非空字符串；`tenseMood` 必须为非空字符串。真正无动词的句子（如 `¡Hola!`）允许 `verbs: []`、`tenseMood: "不适用"`。以下可确定的矛盾视为无效结果：① `verbs` 为空但 `tenseMood` 不是「不适用」，或 `verbs` 非空却为「不适用」；② `verbs` 为空但 `structure` 明确将句子成分标为「动词」「系动词」「助动词」「谓语动词」或「系词」；③ `verbs` 为空但原句命中下述有界高置信词形规则。关键字段缺失、类型错误或上述矛盾均由服务端重试一次，第二次仍无效则返回 `EMPTY_UPSTREAM`。非关键字段（`annotation`/`memoryTip`/`compare`）正常讲解应返回，缺失时降级——前端隐藏对应区块并提示「该部分未生成」，不整页报错。
+> 字段分级与确定性校验：`translation`、`structure` 必须为非空字符串；`verbs` 必须为数组，非空时每项的 `form`、`infinitive`、`person`、`notes` 必须为非空字符串；`tenseMood` 必须为非空字符串。真正无动词的句子（如 `¡Hola!`）允许 `verbs: []`、`tenseMood: "不适用"`。以下可确定的矛盾视为无效结果：① `verbs` 为空但 `tenseMood` 不是「不适用」，或 `verbs` 非空却为「不适用」；② `verbs` 为空但 `structure` 明确将句子成分标为「动词」「系动词」「助动词」「谓语动词」或「系词」；③ `verbs` 为空但原句命中下述有界高置信词形规则。关键字段缺失、类型错误或上述矛盾均由服务端重试一次，第二次仍无效则返回 `EMPTY_UPSTREAM`。非关键字段（`annotation`/`memoryTip`/`compare`）缺失或异常不导致整页报错：讲解页对 `memoryTip`/`compare` 显示缺失提示；有效 `annotation` 由跟读页使用，不凭空生成缺失或无效标注。
 >
 > 当前高置信词形规则仅匹配完整词（忽略大小写与 Unicode 组合写法）：`soy`、`eres`、`es`、`somos`、`sois`；`estoy`、`estás`、`está`、`estamos`、`estáis`、`están`；`hay`。歧义较高的形式只在紧邻、以空白分隔的明确人称线索下判定：`ellos/ellas/ustedes son`、`vos sos`、`yo he`、`tú has`、`él/ella/usted ha`、`nosotros/nosotras hemos`、`vosotros/vosotras habéis`、`ellos/ellas/ustedes han`。这是一组有限的确定性校验规则，不按新发现的动词逐例扩充，也不根据一般词尾推断词性。
 >

@@ -21,7 +21,9 @@ type SentenceMonth = { key: string; label: string; days: SentenceDay[] };
 function GroupMark({ state, label, onChange }: { state: SelectionMark; label: string; onChange: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (inputRef.current) inputRef.current.indeterminate = state === "mixed"; }, [state]);
-  return <input ref={inputRef} type="checkbox" aria-label={label} aria-checked={groupCheckboxAriaChecked(state)} checked={state === "all"} onChange={onChange} />;
+  return <label className="sentence-group-check">
+    <input ref={inputRef} type="checkbox" aria-label={label} aria-checked={groupCheckboxAriaChecked(state)} checked={state === "all"} onChange={onChange} />
+  </label>;
 }
 
 function formatCollectedDate(value: string) {

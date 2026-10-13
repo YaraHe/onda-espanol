@@ -10,6 +10,7 @@ import { useSentenceDraft } from "./components/sentence-draft";
 import { useUserSettings } from "./components/user-settings-provider";
 import { ExplainError, fetchExplanation } from "./lib/explanation";
 import { listRecentPracticeSentences } from "./lib/practice-records";
+import { isSentenceInputWithinLimits } from "./lib/sentence-input";
 
 export default function SelectPage() {
   const router = useRouter();
@@ -49,7 +50,7 @@ export default function SelectPage() {
 
   async function query() {
     const selected = sentence.trim();
-    if (!selected || pending || !lang) return;
+    if (!selected || !isSentenceInputWithinLimits(sentence) || pending || !lang) return;
     setToast("");
     setPending(true);
     try {
@@ -63,10 +64,21 @@ export default function SelectPage() {
     }
   }
 
+  const renderSubmit = (viewport: "desktop" | "mobile") => (
+    <div className={`select-submit select-submit-${viewport}`}>
+      {dialectStatus === "loading" && <p className="supporting-copy" role="status">正在加载方言设置…</p>}
+      {dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败 <button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
+      <button type="button" disabled={!sentence.trim() || !isSentenceInputWithinLimits(sentence) || pending || !lang} className={`primary-button${pending ? " is-loading" : ""}`} onClick={() => void query()}>
+        <Icon name="search" />{pending ? "查询中…" : "查询"}
+      </button>
+    </div>
+  );
+
   return (
     <PageShell title="选句" primary="select">
       <div className="page-stack select-page">
         <SentenceEntry onEdit={() => setHadInput(true)} />
+        {renderSubmit("desktop")}
         {(recentStatus !== "ready" || recent.length > 0 || hadInput) && <section className="section-block recent-practices" aria-label="最近练习">
           <h2 className="section-heading">最近练习</h2>
           {(recentStatus === "loading" || recentUserId !== userId) && <p className="supporting-copy" role="status">正在加载最近练习…</p>}
@@ -75,13 +87,7 @@ export default function SelectPage() {
             ? <ul className="recent-practice-list">{recent.map((item) => <li key={item}><button type="button" lang="es" onClick={() => { setSentence(item); setHadInput(true); }}>{item}</button></li>)}</ul>
             : <p className="empty-text">暂无</p>)}
         </section>}
-        <div className="select-submit">
-          {dialectStatus === "loading" && <p className="supporting-copy" role="status">正在加载方言设置…</p>}
-          {dialectStatus === "error" && <p className="form-error" role="alert">方言设置加载失败 <button type="button" className="inline-retry" onClick={() => void reloadDialect()}>重试</button></p>}
-          <button type="button" disabled={!sentence.trim() || pending || !lang} className={`primary-button${pending ? " is-loading" : ""}`} onClick={() => void query()}>
-            <Icon name="search" />{pending ? "查询中…" : "查询"}
-          </button>
-        </div>
+        {renderSubmit("mobile")}
       </div>
       {toast && <div className="query-toast" role="alert">{toast}<button type="button" onClick={() => setToast("")}>关闭</button></div>}
     </PageShell>

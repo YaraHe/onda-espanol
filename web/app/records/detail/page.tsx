@@ -78,7 +78,8 @@ function RecordDetailContent() {
   function repeatPractice() {
     if (!detail?.translation || !recordId) return;
     const recentFeedback = recentPracticeFeedback(detail.sentence, detail.history);
-    prepareRecordPractice(detail.sentence, detail.translation, recordId, recentFeedback?.focus.goal ?? null);
+    prepareRecordPractice(detail.sentence, detail.translation, recordId,
+      recentFeedback?.focus.goal ?? null, recentFeedback?.focus.reliable ? recentFeedback.focus.word : null);
     router.push("/practice");
   }
 
