@@ -150,7 +150,7 @@ async function main() {
 
     const nextCli = join(rootDir, "node_modules", "next", "dist", "bin", "next");
     if (!existsSync(nextCli)) throw new Error("Next.js executable is missing from the existing web dependencies.");
-    const web = startProcess(process.execPath, [nextCli, "dev", "--hostname", webHost, "--port", "3000"], webDir, {
+    const web = startProcess(process.execPath, [nextCli, "dev", "--webpack", "--hostname", webHost, "--port", "3000"], webDir, {
       ...process.env,
       NEXT_PUBLIC_SUPABASE_URL: config.testUrl,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: config.testKey,

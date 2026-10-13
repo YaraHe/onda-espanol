@@ -37,6 +37,17 @@ test("record list deduplicates the same canonical sentence like record detail hi
   assert.ok(listIds.includes(detailHistoryIds[0]));
 });
 
+test("punctuation variants share a history group while every practice attempt remains available", async () => {
+  const { matchingSentenceRecords } = await import("../app/lib/sentence-identity.mjs");
+  const attempts = [
+    { id: "attempt-new", sentence: "¿Dónde está la biblioteca", overall: 95, created_at: "2026-10-13T08:00:00Z" },
+    { id: "attempt-old", sentence: "¿Dónde está la biblioteca?", overall: 82, created_at: "2026-10-09T08:00:00Z" },
+  ];
+  assert.deepEqual(groupLatestRecordsByDate(attempts).flatMap((group) => group.records.map((record) => record.id)), ["attempt-new"]);
+  assert.deepEqual(matchingSentenceRecords(attempts, "¿Dónde está la biblioteca?").map((record) => record.id), ["attempt-new", "attempt-old"]);
+  assert.deepEqual(attempts.map((record) => record.sentence), ["¿Dónde está la biblioteca", "¿Dónde está la biblioteca?"]);
+});
+
 test("blank legacy records do not collapse into one sentence group", () => {
   const groups = groupLatestRecordsByDate([
     { id: "blank-a", sentence: " ", overall: null, created_at: null },
