@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:e2e:s4-5-save-recovery": "playwright test --config=playwright.config.mjs",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint ."
   },
@@ -16,6 +17,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",

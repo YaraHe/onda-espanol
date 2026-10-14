@@ -1,4 +1,5 @@
 import { ApiAuthenticationError, apiAuthorizationHeader } from "./api-auth";
+import { getApiBaseUrl } from "./api-base.mjs";
 
 export type AssessmentResult = {
   overall: number;
@@ -34,7 +35,7 @@ function isAssessment(value: unknown): value is AssessmentResult {
 }
 
 export async function fetchAssessment(audio: Blob, sentence: string, signal: AbortSignal, lang = "es-ES"): Promise<AssessmentResult> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const baseUrl = getApiBaseUrl();
   if (!baseUrl) throw new AssessmentError("UPSTREAM_ERROR", "发音评估暂时不可用，请稍后重试");
 
   const form = new FormData();
@@ -44,7 +45,7 @@ export async function fetchAssessment(audio: Blob, sentence: string, signal: Abo
 
   try {
     const authorization = await apiAuthorizationHeader();
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/assess`, { method: "POST", headers: authorization, body: form, signal });
+    const response = await fetch(`${baseUrl}/api/assess`, { method: "POST", headers: authorization, body: form, signal });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const error = body && typeof body === "object" && "error" in body ? body.error : null;

@@ -1,8 +1,10 @@
+import { getApiBaseUrl } from "./api-base.mjs";
+
 export async function fetchBackendHealth(signal?: AbortSignal): Promise<void> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const baseUrl = getApiBaseUrl();
   if (!baseUrl) throw new Error("Backend URL is not configured");
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/health`, { signal });
+  const response = await fetch(`${baseUrl}/health`, { signal });
   if (!response.ok) throw new Error(`Backend health returned ${response.status}`);
 
   const body: unknown = await response.json();

@@ -1,4 +1,5 @@
 import { ApiAuthenticationError, apiSession } from "./api-auth";
+import { getApiBaseUrl } from "./api-base.mjs";
 
 export class TtsError extends Error {
   readonly code: string;
@@ -12,7 +13,7 @@ const audioCache = new Map<string, Blob>();
 const AUDIO_CACHE_MAX_ENTRIES = 100;
 
 export async function fetchDemoAudio(sentence: string, rate: number, signal: AbortSignal, lang = "es-ES"): Promise<Blob> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const baseUrl = getApiBaseUrl();
   if (!baseUrl) throw new TtsError("UPSTREAM_ERROR", "示范朗读暂时不可用，请稍后重试");
 
   try {
@@ -24,7 +25,7 @@ export async function fetchDemoAudio(sentence: string, rate: number, signal: Abo
       audioCache.set(key, cached);
       return cached;
     }
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/tts`, {
+    const response = await fetch(`${baseUrl}/api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: session.Authorization },
       body: JSON.stringify({ sentence, lang, rate }),

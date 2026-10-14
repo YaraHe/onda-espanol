@@ -1,4 +1,5 @@
 import { ApiAuthenticationError, apiAuthorizationHeader } from "./api-auth";
+import { getApiBaseUrl } from "./api-base.mjs";
 
 export type Explanation = {
   translation: string;
@@ -69,7 +70,7 @@ function explanationFrom(value: unknown): Explanation | null {
 }
 
 export async function fetchExplanation(sentence: string, lang = "es-ES", signal?: AbortSignal): Promise<Explanation> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const baseUrl = getApiBaseUrl();
   if (!baseUrl) throw new ExplainError("UPSTREAM_ERROR", "讲解服务暂时不可用，请稍后重试");
 
   const controller = new AbortController();
@@ -79,7 +80,7 @@ export async function fetchExplanation(sentence: string, lang = "es-ES", signal?
   const timeout = window.setTimeout(() => controller.abort(), 15_000);
   try {
     const authorization = await apiAuthorizationHeader();
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/explain`, {
+    const response = await fetch(`${baseUrl}/api/explain`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authorization },
       body: JSON.stringify({ sentence, lang }),
