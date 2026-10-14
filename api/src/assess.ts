@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { transcodeToAssessmentWav } from "./audio/transcode.ts";
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+const MAX_AUDIO_SECONDS = 30;
 const REFERENCE_WPM = 160;
 
 type AssessedWord = { word: string; accuracy: number; errorType: string; feedback: string };
@@ -131,7 +132,11 @@ export function createAssessHandler({
   transcode = transcodeToAssessmentWav,
   apiKey = process.env.AZURE_SPEECH_KEY,
   region = process.env.AZURE_SPEECH_REGION,
-}: { fetcher?: typeof fetch; transcode?: typeof transcodeToAssessmentWav; apiKey?: string; region?: string } = {}) {
+  acquireAssessment = () => true,
+  reserveUpstream = () => true,
+}: { fetcher?: typeof fetch; transcode?: typeof transcodeToAssessmentWav; apiKey?: string; region?: string;
+  acquireAssessment?: (request: FastifyRequest, reply: FastifyReply) => boolean;
+  reserveUpstream?: (request: FastifyRequest, reply: FastifyReply) => boolean } = {}) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const contentType = request.headers["content-type"];
     if (!Buffer.isBuffer(request.body) || !contentType?.toLowerCase().startsWith("multipart/form-data")) {
@@ -154,6 +159,7 @@ export function createAssessHandler({
       return error(reply, 400, "INVALID_AUDIO", "录音格式或大小无效，请重录");
     }
     if (!apiKey || !region) return error(reply, 502, "UPSTREAM_ERROR", "发音评估暂时不可用，请稍后重试");
+    if (!acquireAssessment(request, reply)) return;
 
     const signal = AbortSignal.timeout(30_000);
     let wav: Buffer;
@@ -166,8 +172,12 @@ export function createAssessHandler({
     const duration = wavDurationSeconds(wav);
     if (duration === null) return error(reply, 400, "INVALID_AUDIO", "录音无法处理，请重录");
     if (duration < 1) return error(reply, 400, "AUDIO_TOO_SHORT", "没录到声音，请重试");
+    if (duration > MAX_AUDIO_SECONDS) return error(reply, 400, "RECORDING_TOO_LONG", "录音超过 30 秒上限，请重录后再试");
 
     try {
+      if (!reserveUpstream(request, reply)) return;
+      request.log.info({ event: "upstream_usage", provider: "azure_speech", operation: "assessment",
+        audio_seconds: Number(duration.toFixed(1)), audio_bytes: file.size, language: inputLang }, "AI upstream request started");
       const assessmentHeader = Buffer.from(JSON.stringify({
         ReferenceText: sentence,
         GradingSystem: "HundredMark",
@@ -186,6 +196,8 @@ export function createAssessHandler({
         body: new Uint8Array(wav),
         signal,
       });
+      request.log.info({ event: "upstream_usage_result", provider: "azure_speech", operation: "assessment",
+        upstream_status: upstream.status, audio_seconds: Number(duration.toFixed(1)), audio_bytes: file.size }, "AI upstream request completed");
       if (!upstream.ok) return error(reply, 502, "UPSTREAM_ERROR", "发音评估暂时不可用，请稍后重试");
       const raw: unknown = await upstream.json();
       const azureResponse = object(raw);

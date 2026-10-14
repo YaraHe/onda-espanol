@@ -1,3 +1,5 @@
+import { ApiAuthenticationError, apiAuthorizationHeader } from "./api-auth";
+
 export type Explanation = {
   translation: string;
   tenseMood: string;
@@ -76,9 +78,10 @@ export async function fetchExplanation(sentence: string, lang = "es-ES", signal?
   if (signal?.aborted) controller.abort();
   const timeout = window.setTimeout(() => controller.abort(), 15_000);
   try {
+    const authorization = await apiAuthorizationHeader();
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/explain`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authorization },
       body: JSON.stringify({ sentence, lang }),
       signal: controller.signal,
     });
@@ -99,6 +102,7 @@ export async function fetchExplanation(sentence: string, lang = "es-ES", signal?
     return explanation;
   } catch (cause) {
     if (cause instanceof ExplainError) throw cause;
+    if (cause instanceof ApiAuthenticationError) throw new ExplainError("UNAUTHORIZED", cause.message);
     if (controller.signal.aborted) throw new ExplainError("UPSTREAM_ERROR", "查询超时，请重试");
     throw new ExplainError("UPSTREAM_ERROR", "网络连接失败，请检查网络后重试");
   } finally {

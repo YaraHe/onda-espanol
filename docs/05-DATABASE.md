@@ -75,7 +75,7 @@ Stage 3 的初始迁移保留已有 `lang` 并补充播放偏好；`202610070001
 ## 5.4 权限模型（RLS）
 
 - 开启 Row Level Security：用户只能访问自己的个人句子、`practice_records` 和 `user_settings`；个人句子的稳定标识不可绕过用户隔离。个人句子和评分记录授予 authenticated 用户 CRUD；设置表沿用既有 SELECT/INSERT/UPDATE 授权，不授予客户端 DELETE。anon 对这三张表没有表权限。
-- 前端经 Supabase SDK + 登录态 token 直接读写个人句子、练习记录与设置；后端 AI 服务不读写 Supabase 中这些个人数据。后端 AI 接口仍按请求处理用户提交的西语句子和录音（见[文档 6](06-API.md)）。
+- 前端经 Supabase SDK + 登录态 token 直接读写个人句子、练习记录与设置；后端 AI 服务不读写 Supabase 中这些个人数据。S4-7 后端只把 access token 转交 Supabase Auth `GET /auth/v1/user` 验证并取得用户 ID，以实施 AI API 登录鉴权/用户额度；不使用 service-role key，不请求或写入个人数据表。后端 AI 接口仍按请求处理用户提交的西语句子和录音（见[文档 6](06-API.md)）。
 - 前端使用 Supabase publishable key（`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`）连接项目；用户数据仍由登录态和 RLS 隔离，不在前端使用 Supabase secret key。
 
 ## 5.5 数据生命周期

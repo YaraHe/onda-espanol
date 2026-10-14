@@ -1,3 +1,5 @@
+import { ApiAuthenticationError, apiAuthorizationHeader } from "./api-auth";
+
 export type AssessmentResult = {
   overall: number;
   accuracy: number;
@@ -41,7 +43,8 @@ export async function fetchAssessment(audio: Blob, sentence: string, signal: Abo
   form.append("lang", lang);
 
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/assess`, { method: "POST", body: form, signal });
+    const authorization = await apiAuthorizationHeader();
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/assess`, { method: "POST", headers: authorization, body: form, signal });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const error = body && typeof body === "object" && "error" in body ? body.error : null;
@@ -54,6 +57,7 @@ export async function fetchAssessment(audio: Blob, sentence: string, signal: Abo
     return body;
   } catch (cause) {
     if (cause instanceof AssessmentError) throw cause;
+    if (cause instanceof ApiAuthenticationError) throw new AssessmentError("UNAUTHORIZED", cause.message);
     if (signal.aborted) throw new AssessmentError("UPSTREAM_ERROR", "发音评估响应超时，请重试");
     throw new AssessmentError("UPSTREAM_ERROR", "网络连接失败，请检查网络后重试");
   }

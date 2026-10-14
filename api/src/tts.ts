@@ -20,7 +20,9 @@ export function createTtsHandler({
   fetcher = fetch,
   apiKey = process.env.AZURE_SPEECH_KEY,
   region = process.env.AZURE_SPEECH_REGION,
-}: { fetcher?: typeof fetch; apiKey?: string; region?: string } = {}) {
+  reserveUpstream = () => true,
+}: { fetcher?: typeof fetch; apiKey?: string; region?: string;
+  reserveUpstream?: (request: FastifyRequest, reply: FastifyReply) => boolean } = {}) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -45,6 +47,9 @@ export function createTtsHandler({
     const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${lang}"><voice xml:lang="${lang}" name="${voices[lang]}"><prosody rate="${ratePercent}%">${escapeXml(sentence)}</prosody></voice></speak>`;
     const signal = AbortSignal.timeout(15_000);
     try {
+      if (!reserveUpstream(request, reply)) return;
+      request.log.info({ event: "upstream_usage", provider: "azure_speech", operation: "tts",
+        text_characters: Array.from(sentence).length, language: lang, rate }, "AI upstream request started");
       const upstream = await fetcher(`https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`, {
         method: "POST",
         headers: {
@@ -56,6 +61,8 @@ export function createTtsHandler({
         body: ssml,
         signal,
       });
+      request.log.info({ event: "upstream_usage_result", provider: "azure_speech", operation: "tts",
+        upstream_status: upstream.status, text_characters: Array.from(sentence).length }, "AI upstream request completed");
       if (!upstream.ok || !upstream.body) {
         return error(reply, 502, "UPSTREAM_ERROR", "示范朗读暂时不可用，请稍后重试");
       }

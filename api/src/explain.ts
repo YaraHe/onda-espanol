@@ -163,7 +163,8 @@ function error(reply: FastifyReply, status: number, code: string, message: strin
 export function createExplainHandler({
   fetcher = fetch,
   apiKey = process.env.DEEPSEEK_API_KEY,
-}: { fetcher?: typeof fetch; apiKey?: string } = {}) {
+  reserveUpstream = () => true,
+}: { fetcher?: typeof fetch; apiKey?: string; reserveUpstream?: (request: FastifyRequest, reply: FastifyReply) => boolean } = {}) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const body = object(request.body);
     if (!body || typeof body.sentence !== "string") {
@@ -183,6 +184,9 @@ export function createExplainHandler({
     const signal = AbortSignal.timeout(15_000);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
+        if (!reserveUpstream(request, reply)) return;
+        request.log.info({ event: "upstream_usage", provider: "deepseek", operation: "explain",
+          attempt: attempt + 1, text_characters: Array.from(sentence).length, language: lang }, "AI upstream request started");
         const response = await fetcher("https://api.deepseek.com/chat/completions", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -201,7 +205,14 @@ export function createExplainHandler({
         });
         if (!response.ok) return error(reply, 502, "UPSTREAM_ERROR", "讲解服务暂时不可用，请稍后重试");
         const upstream: unknown = await response.json();
-        const content = object(upstream)?.choices;
+        const upstreamObject = object(upstream);
+        const tokenUsage = object(upstreamObject?.usage);
+        request.log.info({ event: "upstream_usage_result", provider: "deepseek", operation: "explain",
+          upstream_status: response.status,
+          prompt_tokens: typeof tokenUsage?.prompt_tokens === "number" ? tokenUsage.prompt_tokens : undefined,
+          completion_tokens: typeof tokenUsage?.completion_tokens === "number" ? tokenUsage.completion_tokens : undefined,
+        }, "AI upstream request completed");
+        const content = upstreamObject?.choices;
         const firstChoice = Array.isArray(content) ? object(content[0]) : null;
         const raw = object(firstChoice?.message)?.content;
         let parsed: unknown;

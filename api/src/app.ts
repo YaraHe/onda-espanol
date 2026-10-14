@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { createExplainHandler } from "./explain.ts";
 import { createTtsHandler } from "./tts.ts";
 import { createAssessHandler } from "./assess.ts";
+import { createApiSecurity, type SecurityOptions } from "./security.ts";
 
 export function createServer({
   allowedOrigin = process.env.FRONTEND_ORIGIN,
@@ -12,14 +13,22 @@ export function createServer({
   azureSpeechRegion,
   assessFetch,
   assessTranscode,
-}: { allowedOrigin?: string; explainFetch?: typeof fetch; deepSeekKey?: string; ttsFetch?: typeof fetch; azureSpeechKey?: string; azureSpeechRegion?: string; assessFetch?: typeof fetch; assessTranscode?: typeof import("./audio/transcode.ts").transcodeToAssessmentWav } = {}) {
-  const server = Fastify({ logger: true });
+  security = {},
+}: { allowedOrigin?: string; explainFetch?: typeof fetch; deepSeekKey?: string; ttsFetch?: typeof fetch; azureSpeechKey?: string; azureSpeechRegion?: string; assessFetch?: typeof fetch; assessTranscode?: typeof import("./audio/transcode.ts").transcodeToAssessmentWav; security?: SecurityOptions } = {}) {
+  const server = Fastify({
+    logger: {
+      redact: { paths: ["req.headers.authorization", "req.headers.cookie", "req.headers['set-cookie']"], censor: "[REDACTED]" },
+      serializers: { req: (request) => ({ method: request.method, url: request.url.split("?", 1)[0] }) },
+    },
+    trustProxy: process.env.RENDER === "true",
+  });
+  const apiSecurity = createApiSecurity(security);
 
   server.addHook("onRequest", async (request, reply) => {
     reply.header("Vary", "Origin");
     const origin = request.headers.origin;
     const isAllowed = Boolean(allowedOrigin && origin === allowedOrigin);
-    if (isAllowed) reply.header("Access-Control-Allow-Origin", origin);
+    if (isAllowed) reply.header("Access-Control-Allow-Origin", origin).header("Access-Control-Expose-Headers", "Retry-After");
 
     if (request.method === "OPTIONS" && request.headers["access-control-request-method"]) {
       if (!isAllowed) {
@@ -29,16 +38,32 @@ export function createServer({
       }
       return reply
         .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        .header("Access-Control-Allow-Headers", "Content-Type")
+        .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         .code(204)
         .send();
     }
   });
 
+  server.addHook("onRequest", async (request, reply) => {
+    await apiSecurity.protect(request, reply);
+  });
+  server.addHook("onResponse", async (request, reply) => {
+    apiSecurity.release(request);
+    if (request.url.startsWith("/api/")) {
+      request.log.info({
+        event: "api_usage",
+        route: request.routeOptions.url ?? request.url.split("?", 1)[0],
+        status_code: reply.statusCode,
+      }, "API request completed");
+    }
+  });
+
   server.get("/health", async () => ({ status: "ok" }));
 
-  server.post("/api/explain", createExplainHandler({ fetcher: explainFetch, apiKey: deepSeekKey }));
-  server.post("/api/tts", createTtsHandler({ fetcher: ttsFetch, apiKey: azureSpeechKey, region: azureSpeechRegion }));
+  server.post("/api/explain", createExplainHandler({ fetcher: explainFetch, apiKey: deepSeekKey,
+    reserveUpstream: (request, reply) => apiSecurity.reserveUpstream(request, reply, "explain") }));
+  server.post("/api/tts", createTtsHandler({ fetcher: ttsFetch, apiKey: azureSpeechKey, region: azureSpeechRegion,
+    reserveUpstream: (request, reply) => apiSecurity.reserveUpstream(request, reply, "tts") }));
 
   // The multipart envelope may exceed the 10 MB audio limit by a small amount.
   server.addContentTypeParser(
@@ -59,6 +84,8 @@ export function createServer({
     },
   }, createAssessHandler({
     fetcher: assessFetch, transcode: assessTranscode, apiKey: azureSpeechKey, region: azureSpeechRegion,
+    acquireAssessment: (request, reply) => apiSecurity.acquireAssessment(request, reply),
+    reserveUpstream: (request, reply) => apiSecurity.reserveUpstream(request, reply, "assess"),
   }));
 
   return server;

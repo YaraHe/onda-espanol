@@ -38,6 +38,7 @@ type RecoverySnapshot = {
   stage: RecoveryStage;
   draft: PracticeRecordDraft | null;
 };
+type PendingAssessment = { audio: Blob; sentence: string; translation: string; lang: "es-ES" | "es-MX"; ownerUserId: string; generation: number };
 
 const createRecoverySnapshot = createPracticeRecoverySnapshot as (input: {
   userId: string;
@@ -174,8 +175,10 @@ export default function PracticePage() {
   const [audioRate, setAudioRate] = useState<number>(1);
   const audio = usePracticeAudio(lang);
   const stopPracticeAudio = audio.stop;
-  const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "assessing">("idle");
+  const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "recorded" | "assessing">("idle");
   const [elapsed, setElapsed] = useState(0);
+  const [pendingAssessment, setPendingAssessment] = useState<PendingAssessment | null>(null);
+  const [pendingNeedsConfirmation, setPendingNeedsConfirmation] = useState(false);
   const [toast, setToast] = useState("");
   const [result, setResult] = useState<AssessmentResult | null>(null);
   const [perfectScoreArrival, setPerfectScoreArrival] = useState(false);
@@ -189,9 +192,10 @@ export default function PracticePage() {
   const [selectedWord, setSelectedWord] = useState<{ kind: "reference" | "insertion"; index: number } | null>(null);
   const [practiceGoal, setPracticeGoal] = useState<string | null>(repeatPractice?.focus ?? practiceContext?.focus ?? null);
   const [practiceTargetWord, setPracticeTargetWord] = useState<string | null>(repeatPractice?.focusWord ?? practiceContext?.focusWord ?? null);
-  const recording = useRef<{ recorder: MediaRecorder; stream: MediaStream; started: number; chunks: Blob[] } | null>(null);
+  const recording = useRef<{ recorder: MediaRecorder; stream: MediaStream; started: number; chunks: Blob[]; limitReached: boolean } | null>(null);
   const request = useRef<AbortController | null>(null);
   const timer = useRef<number | null>(null);
+  const maxRecordingTimer = useRef<number | null>(null);
   const perfectScoreTimer = useRef<number | null>(null);
   const generation = useRef(0);
   const initializedUser = useRef<string | null>(null);
@@ -267,6 +271,8 @@ export default function PracticePage() {
       }
       if (timer.current !== null) window.clearInterval(timer.current);
       timer.current = null;
+      if (maxRecordingTimer.current !== null) window.clearTimeout(maxRecordingTimer.current);
+      maxRecordingTimer.current = null;
       if (perfectScoreTimer.current !== null) window.clearTimeout(perfectScoreTimer.current);
       perfectScoreTimer.current = null;
       stopPracticeAudio();
@@ -278,6 +284,8 @@ export default function PracticePage() {
       setPerfectScoreArrival(false);
       setSaveDraft(null);
       setSaveStatus("idle");
+      setPendingAssessment(null);
+      setPendingNeedsConfirmation(false);
       setSelectedWord(null);
       setPracticeTargetWord(null);
       setToast("");
@@ -415,19 +423,21 @@ export default function PracticePage() {
   }, [saveDraft, saveStatus, authStatus, userId, persistRecovery]);
 
   const hasUnsavedResult = result !== null && saveStatus !== "saved" && saveStatus !== "idle";
+  const hasPendingAudio = pendingAssessment !== null;
   function confirmDiscard(message = discardMessage): boolean {
-    return !hasUnsavedResult || window.confirm(message);
+    return (!hasUnsavedResult && !hasPendingAudio) || window.confirm(hasPendingAudio && !hasUnsavedResult
+      ? "当前录音尚未评分，离开会丢弃这段录音。确定继续吗？" : message);
   }
 
   useEffect(() => {
-    if (!hasUnsavedResult) return;
+    if (!hasUnsavedResult && !hasPendingAudio) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [hasUnsavedResult]);
+  }, [hasUnsavedResult, hasPendingAudio]);
 
   useEffect(() => {
-    if (!hasUnsavedResult) return;
+    if (!hasUnsavedResult && !hasPendingAudio) return;
     const guardedWindow = window as Window & { __confirmPracticeHistoryLeave?: () => boolean };
     const confirmLeave = () => window.confirm(discardMessage);
     guardedWindow.__confirmPracticeHistoryLeave = confirmLeave;
@@ -436,12 +446,13 @@ export default function PracticePage() {
         delete guardedWindow.__confirmPracticeHistoryLeave;
       }
     };
-  }, [hasUnsavedResult]);
+  }, [hasUnsavedResult, hasPendingAudio]);
 
   useEffect(() => () => {
     generation.current += 1;
     request.current?.abort();
     if (timer.current !== null) window.clearInterval(timer.current);
+    if (maxRecordingTimer.current !== null) window.clearTimeout(maxRecordingTimer.current);
     const current = recording.current;
     if (current) {
       current.recorder.onstop = null;
@@ -449,6 +460,59 @@ export default function PracticePage() {
       current.stream.getTracks().forEach((track) => track.stop());
     }
   }, []);
+
+  async function submitPendingAssessment(pending = pendingAssessment) {
+    if (!pending || pending.ownerUserId !== userIdRef.current || pending.ownerUserId !== activeTaskOwner.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 30_000);
+    let succeeded = false;
+    setPhase("assessing");
+    setToast("");
+    persistRecovery("assessing", null);
+    try {
+      const assessment = await fetchAssessment(pending.audio, pending.sentence, controller.signal, pending.lang);
+      if (pending.generation !== generation.current || userIdRef.current !== pending.ownerUserId
+        || activeTaskOwner.current !== pending.ownerUserId) return;
+      const focus = practiceFocus(pending.sentence, assessment.words, {
+        overall: assessment.overall, accuracy: assessment.accuracy, fluency: assessment.fluency,
+        completeness: assessment.completeness, speakingRate: assessment.speakingRate,
+      });
+      const draft = { id: crypto.randomUUID(), ownerUserId: pending.ownerUserId,
+        sentence: pending.sentence, translation: pending.translation, result: assessment };
+      persistRecovery("score-ready", draft, focus.goal, practiceContextRef.current, focus.word);
+      setResult(assessment);
+      if (perfectScoreTimer.current !== null) window.clearTimeout(perfectScoreTimer.current);
+      const shouldCelebrate = assessment.overall === 100
+        && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      setPerfectScoreArrival(shouldCelebrate);
+      perfectScoreTimer.current = shouldCelebrate
+        ? window.setTimeout(() => {
+          setPerfectScoreArrival(false);
+          perfectScoreTimer.current = null;
+        }, 1500)
+        : null;
+      setPracticeGoal(focus.goal);
+      setPracticeTargetWord(focus.word);
+      setSaveDraft(draft);
+      setSaveStatus("saving");
+      setPendingAssessment(null);
+      setPendingNeedsConfirmation(false);
+      succeeded = true;
+    } catch (cause) {
+      if (pending.generation === generation.current && userIdRef.current === pending.ownerUserId
+        && activeTaskOwner.current === pending.ownerUserId) {
+        persistRecovery("ready", null);
+        setToast(cause instanceof AssessmentError ? cause.message : "评估失败，录音仍保留在当前页面，可手动重试");
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (request.current === controller) request.current = null;
+      if (pending.generation === generation.current && userIdRef.current === pending.ownerUserId) {
+        setPhase(succeeded ? "idle" : "recorded");
+      }
+    }
+  }
 
   async function startRecording() {
     if (authStatus !== "signed-in" || !userId || activeTaskOwner.current !== userId
@@ -468,6 +532,8 @@ export default function PracticePage() {
     setPerfectScoreArrival(false);
     setSaveDraft(null);
     setSaveStatus("idle");
+    setPendingAssessment(null);
+    setPendingNeedsConfirmation(false);
     setSelectedWord(null);
     persistRecovery("recording", null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
@@ -493,7 +559,7 @@ export default function PracticePage() {
         return;
       }
       const recorder = new MediaRecorder(stream, { mimeType });
-      const current = { recorder, stream, started: 0, chunks: [] as Blob[] };
+      const current = { recorder, stream, started: 0, chunks: [] as Blob[], limitReached: false };
       recording.current = current;
       recorder.ondataavailable = (event) => {
         if (event.data.size) current.chunks.push(event.data);
@@ -506,6 +572,8 @@ export default function PracticePage() {
         stream?.getTracks().forEach((track) => track.stop());
         if (timer.current !== null) window.clearInterval(timer.current);
         timer.current = null;
+        if (maxRecordingTimer.current !== null) window.clearTimeout(maxRecordingTimer.current);
+        maxRecordingTimer.current = null;
         setPhase("idle");
         setToast("录音失败，请重试");
         persistRecovery("ready", null);
@@ -515,6 +583,8 @@ export default function PracticePage() {
         recording.current = null;
         if (timer.current !== null) window.clearInterval(timer.current);
         timer.current = null;
+        if (maxRecordingTimer.current !== null) window.clearTimeout(maxRecordingTimer.current);
+        maxRecordingTimer.current = null;
         if (currentGeneration !== generation.current) return;
         if (performance.now() - current.started < 1000) {
           setToast("没录到声音，请重试");
@@ -535,55 +605,29 @@ export default function PracticePage() {
           persistRecovery("ready", null);
           return;
         }
-        const controller = new AbortController();
-        request.current = controller;
-        const timeout = window.setTimeout(() => controller.abort(), 30_000);
-        setPhase("assessing");
-        persistRecovery("assessing", null);
-        void fetchAssessment(audio, assessmentSentence, controller.signal, lang)
-          .then((assessment) => {
-            if (currentGeneration === generation.current && userIdRef.current === assessmentOwnerUserId
-              && activeTaskOwner.current === assessmentOwnerUserId) {
-              const focus = practiceFocus(assessmentSentence, assessment.words,
-                { overall: assessment.overall, accuracy: assessment.accuracy, fluency: assessment.fluency,
-                  completeness: assessment.completeness, speakingRate: assessment.speakingRate });
-              const draft = { id: crypto.randomUUID(), ownerUserId: assessmentOwnerUserId, sentence: assessmentSentence, translation, result: assessment };
-              persistRecovery("score-ready", draft, focus.goal, practiceContextRef.current, focus.word);
-              setResult(assessment);
-              if (perfectScoreTimer.current !== null) window.clearTimeout(perfectScoreTimer.current);
-              const shouldCelebrate = assessment.overall === 100
-                && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-              setPerfectScoreArrival(shouldCelebrate);
-              perfectScoreTimer.current = shouldCelebrate
-                ? window.setTimeout(() => {
-                  setPerfectScoreArrival(false);
-                  perfectScoreTimer.current = null;
-                }, 1500)
-                : null;
-              setPracticeGoal(focus.goal);
-              setPracticeTargetWord(focus.word);
-              setSaveDraft(draft);
-              setSaveStatus("saving");
-            }
-          })
-          .catch((cause) => {
-            if (currentGeneration === generation.current && userIdRef.current === assessmentOwnerUserId
-              && activeTaskOwner.current === assessmentOwnerUserId) {
-              persistRecovery("ready", null);
-              setToast(cause instanceof AssessmentError ? cause.message : "评估失败，请重试");
-            }
-          })
-          .finally(() => {
-            window.clearTimeout(timeout);
-            if (request.current === controller) request.current = null;
-            if (currentGeneration === generation.current && userIdRef.current === assessmentOwnerUserId) setPhase("idle");
-          });
+        const pending = { audio, sentence: assessmentSentence, translation, lang,
+          ownerUserId: assessmentOwnerUserId, generation: currentGeneration };
+        setPendingAssessment(pending);
+        if (current.limitReached) {
+          setPendingNeedsConfirmation(true);
+          setPhase("recorded");
+          setToast("");
+          return;
+        }
+        setPendingNeedsConfirmation(false);
+        void submitPendingAssessment(pending);
       };
       recorder.start();
       current.started = performance.now();
       setElapsed(0);
       setPhase("recording");
       timer.current = window.setInterval(() => setElapsed(Math.floor((performance.now() - current.started) / 1000)), 250);
+      maxRecordingTimer.current = window.setTimeout(() => {
+        if (recording.current !== current || current.recorder.state !== "recording") return;
+        current.limitReached = true;
+        setElapsed(30);
+        stopRecording();
+      }, 29_500);
     } catch (cause) {
       stream?.getTracks().forEach((track) => track.stop());
       if (currentGeneration !== generation.current) return;
@@ -620,8 +664,10 @@ export default function PracticePage() {
     : selectedWord?.kind === "insertion" ? `多读「${aligned?.insertions[selectedWord.index]?.assessment.word}」` : null;
   const action = canPractice && lang ? <button type="button" className={`primary-button ${phase === "recording" ? "recording-button" : ""} ${phase === "assessing" ? "is-loading" : ""}`}
     disabled={phase === "starting" || phase === "assessing"}
-    onClick={() => phase === "recording" ? stopRecording() : void startRecording()}>
-    {phase === "recording" ? <><Icon name="stop" />停止 · {clock}</> : phase === "assessing" ? "评估中…" : phase === "starting" ? "正在请求麦克风…" : result ? "再读一次" : <><Icon name="mic" />录音</>}
+    onClick={() => phase === "recording" ? stopRecording() : phase === "recorded" ? void submitPendingAssessment() : void startRecording()}>
+    {phase === "recording" ? <><Icon name="stop" />停止 · {clock}</> : phase === "assessing" ? "评估中…" : phase === "starting" ? "正在请求麦克风…"
+      : phase === "recorded" ? pendingNeedsConfirmation ? "确认完整并评分" : "重试评分"
+        : result ? "再读一次" : <><Icon name="mic" />录音</>}
   </button> : undefined;
 
   return (
@@ -649,6 +695,14 @@ export default function PracticePage() {
         {canPractice && lang && <DemoPlayer key={`${practiceSentence}:${lang}`} sentence={practiceSentence}
           annotation={repeatPractice ? null : explanation?.annotation ?? practiceContext?.annotation ?? null}
           audio={audio} rate={audioRate} setRate={setAudioRate} />}
+        {canPractice && <p className="field-note">单次录音最长 30 秒；接近上限会自动停止，并由你确认是否评分。</p>}
+        {phase === "recording" && elapsed >= 25 && <p className="assessment-status" role="status">录音即将到达 30 秒上限，请准备结束</p>}
+        {pendingAssessment && phase === "recorded" && <div className="assessment-status" role="status">
+          <p>{pendingNeedsConfirmation
+            ? "录音已在 30 秒上限前停止。确认句子已经读完后再评分；如果尚未读完，可以重新录制。"
+            : "评分尚未完成，录音仍保留在当前页面。你可以手动重试，或重新录制。"}</p>
+          <button type="button" className="inline-retry" onClick={() => void startRecording()}>重新录制</button>
+        </div>}
         {canPractice && practiceTranslation && <p className="practice-translation"><span>句意</span>{practiceTranslation}</p>}
         {phase === "assessing" && <p className="assessment-status" role="status">正在评估朗读…</p>}
         {result && <section className="section-block assessment-result" aria-label="评分结果">

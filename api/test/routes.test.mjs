@@ -1,6 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createServer } from "../dist/app.js";
+import { createServer as buildServer } from "../dist/app.js";
+
+function createServer(options = {}) {
+  const server = buildServer({
+    ...options,
+    security: {
+      ...options.security,
+      verifyAccessToken: options.security?.verifyAccessToken ?? (async (token) => token === "test-token" ? "test-user" : null),
+      limits: options.security?.limits ?? {
+        explain: { short: { count: 1000, windowMs: 600_000 }, daily: { count: 1000, windowMs: 86_400_000 } },
+        assess: { short: { count: 1000, windowMs: 600_000 }, daily: { count: 1000, windowMs: 86_400_000 } },
+        tts: { short: { count: 1000, windowMs: 60_000 }, daily: { count: 1000, windowMs: 86_400_000 } },
+      },
+      ipLimit: options.security?.ipLimit ?? { count: 1000, windowMs: 60_000 },
+      ttsGlobalLimit: options.security?.ttsGlobalLimit ?? { count: 1000, windowMs: 60_000 },
+    },
+  });
+  const inject = server.inject.bind(server);
+  server.inject = (request) => request.url?.startsWith("/api/") && request.method !== "OPTIONS"
+    ? inject({ ...request, headers: { authorization: "Bearer test-token", ...request.headers } })
+    : inject(request);
+  return server;
+}
 
 test("health reports a running server", async (t) => {
   const server = createServer();
@@ -95,6 +117,20 @@ test("assess rejects invalid and short audio before Azure", async (t) => {
   const short = await server.inject({ method: "POST", url: "/api/assess", ...await multipart() });
   assert.equal(short.statusCode, 400);
   assert.equal(short.json().error.code, "AUDIO_TOO_SHORT");
+  assert.equal(called, 0);
+});
+
+test("assess rejects decoded recordings longer than 30 seconds before Azure", async (t) => {
+  let called = 0;
+  const server = createServer({
+    azureSpeechKey: "test-key", azureSpeechRegion: "eastus",
+    assessTranscode: async () => wavSeconds(30.1),
+    assessFetch: async () => { called += 1; return new Response(JSON.stringify(azureAssessment)); },
+  });
+  t.after(() => server.close());
+  const response = await server.inject({ method: "POST", url: "/api/assess", ...await multipart() });
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.json().error.code, "RECORDING_TOO_LONG");
   assert.equal(called, 0);
 });
 

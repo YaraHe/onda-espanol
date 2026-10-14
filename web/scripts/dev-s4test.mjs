@@ -118,7 +118,8 @@ async function main() {
     console.log(`PASS isolated Supabase ref: ${testProjectRef}`);
     console.log(`PASS web URL: ${config.frontendUrl}`);
     console.log(`PASS API URL: ${config.apiUrl}`);
-    console.log("PASS API credentials are read from api/.env.local and are not printed.");
+    console.log("PASS AI credentials are read from api/.env.local and are not printed.");
+    console.log("PASS API Supabase Auth uses the isolated test URL and publishable key, overriding any local API Supabase settings.");
     return;
   }
 
@@ -138,7 +139,14 @@ async function main() {
 
   const api = startProcess(process.execPath, [
     "--env-file-if-exists=.env.local", "--experimental-strip-types", "src/index.ts",
-  ], apiDir, { ...process.env, HOST: apiHost, PORT: String(config.apiPort), FRONTEND_ORIGIN: frontendOrigin });
+  ], apiDir, {
+    ...process.env,
+    HOST: apiHost,
+    PORT: String(config.apiPort),
+    FRONTEND_ORIGIN: frontendOrigin,
+    SUPABASE_URL: config.testUrl,
+    SUPABASE_PUBLISHABLE_KEY: config.testKey,
+  });
   children.push(api);
   api.once("exit", (code) => { if (!stopping) stop(code ?? 1); });
   console.log(`Verified isolated Supabase project ${testProjectRef}; starting local API ${config.apiUrl}.`);
