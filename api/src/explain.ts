@@ -183,10 +183,16 @@ export function createExplainHandler({
 
     const signal = AbortSignal.timeout(15_000);
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const attemptStartedAt = performance.now();
+      let upstreamStartedAt: number | undefined;
+      let upstreamCompletedAt: number | undefined;
+      let validationMs: number | undefined;
+      let outcome = "error";
       try {
-        if (!reserveUpstream(request, reply)) return;
+        if (!reserveUpstream(request, reply)) { outcome = "blocked"; return; }
         request.log.info({ event: "upstream_usage", provider: "deepseek", operation: "explain",
           attempt: attempt + 1, text_characters: Array.from(sentence).length, language: lang }, "AI upstream request started");
+        upstreamStartedAt = performance.now();
         const response = await fetcher("https://api.deepseek.com/chat/completions", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -203,8 +209,13 @@ export function createExplainHandler({
           }),
           signal,
         });
-        if (!response.ok) return error(reply, 502, "UPSTREAM_ERROR", "讲解服务暂时不可用，请稍后重试");
+        if (!response.ok) {
+          upstreamCompletedAt = performance.now();
+          outcome = "upstream_error";
+          return error(reply, 502, "UPSTREAM_ERROR", "讲解服务暂时不可用，请稍后重试");
+        }
         const upstream: unknown = await response.json();
+        upstreamCompletedAt = performance.now();
         const upstreamObject = object(upstream);
         const tokenUsage = object(upstreamObject?.usage);
         request.log.info({ event: "upstream_usage_result", provider: "deepseek", operation: "explain",
@@ -212,6 +223,7 @@ export function createExplainHandler({
           prompt_tokens: typeof tokenUsage?.prompt_tokens === "number" ? tokenUsage.prompt_tokens : undefined,
           completion_tokens: typeof tokenUsage?.completion_tokens === "number" ? tokenUsage.completion_tokens : undefined,
         }, "AI upstream request completed");
+        const validationStartedAt = performance.now();
         const content = upstreamObject?.choices;
         const firstChoice = Array.isArray(content) ? object(content[0]) : null;
         const raw = object(firstChoice?.message)?.content;
@@ -219,13 +231,33 @@ export function createExplainHandler({
         try { parsed = typeof raw === "string" ? JSON.parse(raw) : null; } catch { parsed = null; }
         const result = object(parsed);
         if (result?.isSpanish === false) {
+          validationMs = Math.round(performance.now() - validationStartedAt);
+          outcome = "not_spanish";
           return error(reply, 422, "NOT_SPANISH", "看起来不是西班牙语，请确认");
         }
         const explanation = explanationFrom(result, sentence);
-        if (explanation && firstChoice?.finish_reason !== "length") return reply.send(explanation);
+        validationMs = Math.round(performance.now() - validationStartedAt);
+        if (explanation && firstChoice?.finish_reason !== "length") {
+          outcome = "ok";
+          return reply.send(explanation);
+        }
+        outcome = "invalid_output";
       } catch {
-        if (signal.aborted) return error(reply, 504, "UPSTREAM_ERROR", "讲解服务响应超时，请重试");
+        if (signal.aborted) {
+          outcome = "timeout";
+          return error(reply, 504, "UPSTREAM_ERROR", "讲解服务响应超时，请重试");
+        }
         return error(reply, 502, "UPSTREAM_ERROR", "讲解服务暂时不可用，请稍后重试");
+      } finally {
+        request.log.info({
+          event: "explain_timing",
+          attempt: attempt + 1,
+          upstream_ms: upstreamStartedAt === undefined ? undefined
+            : Math.round((upstreamCompletedAt ?? performance.now()) - upstreamStartedAt),
+          validation_ms: validationMs,
+          attempt_ms: Math.round(performance.now() - attemptStartedAt),
+          outcome,
+        }, "Explain attempt timing");
       }
     }
     return error(reply, 502, "EMPTY_UPSTREAM", "讲解内容不完整，请稍后重试");

@@ -8,6 +8,7 @@ import { useAuth } from "../components/auth-provider";
 import { useSentenceDraft } from "../components/sentence-draft";
 import { useUserSettings } from "../components/user-settings-provider";
 import { ExplainError, fetchExplanation } from "../lib/explanation";
+import { reportExplainPresentationTiming } from "../lib/explain-presentation-timing";
 import { savePersonalSentence } from "../lib/personal-sentences";
 
 export default function ExplanationPage() {
@@ -24,6 +25,18 @@ export default function ExplanationPage() {
   const collectionAttempt = useRef(0);
   const collectionToastId = useRef(0);
   const collectionToastTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (learningOrigin !== "select" || !explanation) return;
+    let nextFrame: number | undefined;
+    const firstFrame = window.requestAnimationFrame(() => {
+      nextFrame = window.requestAnimationFrame(reportExplainPresentationTiming);
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (nextFrame !== undefined) window.cancelAnimationFrame(nextFrame);
+    };
+  }, [learningOrigin, explanation]);
 
   function showCollectionToast(status: "saving" | "saved" | "error") {
     const messages = {

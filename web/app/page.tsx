@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "./components/icons";
 import { useAuth } from "./components/auth-provider";
@@ -9,6 +9,8 @@ import { SentenceEntry } from "./components/sentence-entry";
 import { useSentenceDraft } from "./components/sentence-draft";
 import { useUserSettings } from "./components/user-settings-provider";
 import { ExplainError, fetchExplanation } from "./lib/explanation";
+import { prewarmBackend } from "./lib/backend-health";
+import { clearExplainPresentationTiming, markExplainQueryStart, markExplainResultReady } from "./lib/explain-presentation-timing";
 import { listRecentPracticeSentences } from "./lib/practice-records";
 import { isSentenceInputWithinLimits } from "./lib/sentence-input";
 
@@ -18,11 +20,17 @@ export default function SelectPage() {
   const { sentence, setSentence, setLearning } = useSentenceDraft();
   const { lang, status: dialectStatus, reload: reloadDialect } = useUserSettings();
   const [pending, setPending] = useState(false);
+  const pendingRequest = useRef(false);
+  const [longWait, setLongWait] = useState(false);
   const [toast, setToast] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const [recentStatus, setRecentStatus] = useState<"loading" | "ready" | "error">("loading");
   const [recentUserId, setRecentUserId] = useState<string | null>(null);
   const [hadInput, setHadInput] = useState(Boolean(sentence));
+
+  useEffect(() => {
+    if (userId) prewarmBackend();
+  }, [userId]);
 
   useEffect(() => {
     let active = true;
@@ -50,17 +58,26 @@ export default function SelectPage() {
 
   async function query() {
     const selected = sentence.trim();
-    if (!selected || !isSentenceInputWithinLimits(sentence) || pending || !lang) return;
+    if (!selected || !isSentenceInputWithinLimits(sentence) || pendingRequest.current || !lang) return;
+    pendingRequest.current = true;
     setToast("");
     setPending(true);
+    setLongWait(false);
+    markExplainQueryStart();
+    const waitHint = window.setTimeout(() => setLongWait(true), 8_000);
     try {
       const explanation = await fetchExplanation(selected, lang);
       setLearning(selected, explanation);
+      markExplainResultReady();
       router.push("/explanation");
     } catch (cause) {
+      clearExplainPresentationTiming();
       setToast(cause instanceof ExplainError ? cause.message : "查询失败，请稍后重试");
     } finally {
+      window.clearTimeout(waitHint);
+      pendingRequest.current = false;
       setPending(false);
+      setLongWait(false);
     }
   }
 
@@ -71,6 +88,9 @@ export default function SelectPage() {
       <button type="button" disabled={!sentence.trim() || !isSentenceInputWithinLimits(sentence) || pending || !lang} className={`primary-button${pending ? " is-loading" : ""}`} onClick={() => void query()}>
         <Icon name="search" />{pending ? "查询中…" : "查询"}
       </button>
+      {pending && <p className="supporting-copy query-wait-state" role="status">
+        {longWait ? "仍在等待讲解结果。首次访问时，服务也可能需要一些时间唤醒。" : "正在获取讲解，请稍候…"}
+      </p>}
     </div>
   );
 
@@ -89,7 +109,7 @@ export default function SelectPage() {
         </section>}
         {renderSubmit("mobile")}
       </div>
-      {toast && <div className="query-toast" role="alert">{toast}<button type="button" onClick={() => setToast("")}>关闭</button></div>}
+      {toast && <div className="query-toast" role="alert"><span>{toast}</span><div className="query-toast-actions"><button type="button" onClick={() => void query()}>重试</button><button type="button" onClick={() => setToast("")}>关闭</button></div></div>}
     </PageShell>
   );
 }

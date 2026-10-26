@@ -24,6 +24,11 @@ export class ExplainError extends Error {
   }
 }
 
+// Render Free services can take about a minute to wake after idle. Keep the
+// browser request alive through that startup window; the API still enforces its
+// separate 15-second upstream model timeout.
+const EXPLANATION_REQUEST_TIMEOUT_MS = 75_000;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -70,6 +75,7 @@ function explanationFrom(value: unknown): Explanation | null {
 }
 
 export async function fetchExplanation(sentence: string, lang = "es-ES", signal?: AbortSignal): Promise<Explanation> {
+  const startedAt = performance.now();
   const baseUrl = getApiBaseUrl();
   if (!baseUrl) throw new ExplainError("UPSTREAM_ERROR", "讲解服务暂时不可用，请稍后重试");
 
@@ -77,16 +83,28 @@ export async function fetchExplanation(sentence: string, lang = "es-ES", signal?
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) controller.abort();
-  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  const timeout = window.setTimeout(() => controller.abort(), EXPLANATION_REQUEST_TIMEOUT_MS);
+  let sessionMs: number | undefined;
+  let requestStartedAt: number | undefined;
+  let requestMs: number | undefined;
+  let bodyMs: number | undefined;
+  let validationMs: number | undefined;
+  let outcome = "error";
   try {
+    const sessionStartedAt = performance.now();
     const authorization = await apiAuthorizationHeader();
+    sessionMs = Math.round(performance.now() - sessionStartedAt);
+    requestStartedAt = performance.now();
     const response = await fetch(`${baseUrl}/api/explain`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authorization },
       body: JSON.stringify({ sentence, lang }),
       signal: controller.signal,
     });
+    requestMs = Math.round(performance.now() - requestStartedAt);
+    const bodyStartedAt = performance.now();
     const body: unknown = await response.json();
+    bodyMs = Math.round(performance.now() - bodyStartedAt);
     if (!response.ok) {
       const error = typeof body === "object" && body !== null && "error" in body ? body.error : null;
       const code = typeof error === "object" && error !== null && "code" in error ? error.code : null;
@@ -96,17 +114,29 @@ export async function fetchExplanation(sentence: string, lang = "es-ES", signal?
         typeof message === "string" ? message : "查询失败，请稍后重试",
       );
     }
+    const validationStartedAt = performance.now();
     const explanation = explanationFrom(body);
+    validationMs = Math.round(performance.now() - validationStartedAt);
     if (!explanation) {
       throw new ExplainError("EMPTY_UPSTREAM", "讲解内容不完整，请稍后重试");
     }
+    outcome = "ok";
     return explanation;
   } catch (cause) {
     if (cause instanceof ExplainError) throw cause;
     if (cause instanceof ApiAuthenticationError) throw new ExplainError("UNAUTHORIZED", cause.message);
-    if (controller.signal.aborted) throw new ExplainError("UPSTREAM_ERROR", "查询超时，请重试");
+    if (controller.signal.aborted) throw new ExplainError("UPSTREAM_ERROR", "等待讲解结果超时，请检查网络后重试");
     throw new ExplainError("UPSTREAM_ERROR", "网络连接失败，请检查网络后重试");
   } finally {
+    console.info("explain_client_timing", {
+      session_ms: sessionMs,
+      request_to_headers_ms: requestMs ?? (requestStartedAt === undefined ? undefined : Math.round(performance.now() - requestStartedAt)),
+      response_body_ms: bodyMs,
+      validation_ms: validationMs,
+      total_ms: Math.round(performance.now() - startedAt),
+      timed_out: controller.signal.aborted,
+      outcome,
+    });
     window.clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);
   }

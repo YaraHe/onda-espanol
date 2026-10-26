@@ -12,7 +12,7 @@
 | 鉴权 | 三个 AI 接口均要求 Supabase Auth 登录态；前端传 `Authorization: Bearer <access_token>`，API 使用 Supabase Auth `GET /auth/v1/user` 校验令牌并取用户 ID。不使用 service-role key，不读取用户数据库表 |
 | 来源限制 | CORS 白名单约束浏览器跨域读取；鉴权仍独立保护直连请求，CORS 不是鉴权手段 |
 | 请求体限制 | `audio` ≤ 10MB，解码后录音时长 1–30 秒 |
-| 超时 | explain 15s / assess 30s / tts 15s |
+| 超时 | 后端上游请求：explain 15s / assess 30s / tts 15s；浏览器端 `/api/explain` 总等待上限 75s（为 Render Free 唤醒预留约 1 分钟） |
 | 限流 | 单 API 进程内按已验证用户执行接口额度，并按 IP 做宽松短时保护；TTS 另有进程级总额度，评分另有进程级单并发管道（从转码前到 Azure 响应完成）。进程重启会清空计数；多实例不共享计数，分享前部署需保持单实例或另行批准共享配额方案 |
 | 额度记账 | 先完成请求格式、参数与录音校验，再在每次即将发起的付费上游请求前记账；无效请求、额度拒绝及评分并发忙碌不扣用户额度。已发起但失败/超时的上游请求仍计入；讲解内部重试每次上游尝试分别计数 |
 | 错误格式 | 统一返回 `{ "error": { "code": "...", "message": "..." } }` |

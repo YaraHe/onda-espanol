@@ -146,6 +146,7 @@ a { color: inherit; text-decoration: none; }
 .select-submit-desktop { display: none; }
 .select-submit .primary-button:not(:disabled) { border-color: var(--ink); background: var(--ink); }
 .select-submit .is-loading::before { content: ""; width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: query-spin .7s linear infinite; }
+.query-wait-state { margin: 0; }
 @keyframes query-spin { to { transform: rotate(360deg); } }
 .query-toast {
   position: fixed;
@@ -166,6 +167,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 14px;
 }
 .query-toast button { flex: none; border: 0; background: transparent; color: var(--blue); text-decoration: underline; }
+.query-toast-actions { display: flex; flex: none; align-items: center; gap: 12px; }
 .collection-retry-state { margin: 8px 0 0; color: var(--ink-soft); font-size: 13px; }
 .inline-retry { min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--blue); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .recent-practices { gap: 8px; }

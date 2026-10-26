@@ -23,8 +23,12 @@ export function createServer({
     trustProxy: process.env.RENDER === "true",
   });
   const apiSecurity = createApiSecurity(security);
+  const explainRequestStartedAt = new WeakMap<object, number>();
 
   server.addHook("onRequest", async (request, reply) => {
+    if (request.method === "POST" && request.url.split("?", 1)[0] === "/api/explain") {
+      explainRequestStartedAt.set(request, performance.now());
+    }
     reply.header("Vary", "Origin");
     const origin = request.headers.origin;
     const isAllowed = Boolean(allowedOrigin && origin === allowedOrigin);
@@ -45,7 +49,12 @@ export function createServer({
   });
 
   server.addHook("onRequest", async (request, reply) => {
+    const authStartedAt = performance.now();
     await apiSecurity.protect(request, reply);
+    if (explainRequestStartedAt.has(request)) {
+      request.log.info({ event: "explain_auth_timing", auth_gate_ms: Math.round(performance.now() - authStartedAt) },
+        "Explain authentication gate completed");
+    }
   });
   server.addHook("onResponse", async (request, reply) => {
     apiSecurity.release(request);
@@ -54,6 +63,9 @@ export function createServer({
         event: "api_usage",
         route: request.routeOptions.url ?? request.url.split("?", 1)[0],
         status_code: reply.statusCode,
+        ...(explainRequestStartedAt.has(request) && {
+          server_ms: Math.round(performance.now() - explainRequestStartedAt.get(request)!),
+        }),
       }, "API request completed");
     }
   });
