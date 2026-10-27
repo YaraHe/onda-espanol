@@ -22,6 +22,7 @@ next-env.d.ts
 # Local tooling artifacts
 .tools/
 .vercel/
+/supabase/.temp/
 *.log
 .DS_Store
 Thumbs.db
